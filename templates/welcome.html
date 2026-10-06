@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Welcome — D&amp;D Tracker{% endblock %}
+{% block content %}
+<div class="panel" style="text-align:center; padding:2rem; max-width:34rem; margin:2rem auto;">
+    <h2>Welcome</h2>
+    <p style="margin:1rem 0; color:var(--text-secondary);">
+        Nothing is stored on this device yet. If you have a backup file from the old site or another device,
+        import it. Otherwise, start a new character.
+    </p>
+    <div style="display:flex; flex-direction:column; gap:0.6rem; align-items:stretch;">
+        <button class="btn btn-gold" onclick="showDataModal()">⬆ Import a backup</button>
+        <button class="btn" onclick="showNewCharModal()">+ Create a new character</button>
+    </div>
+    <p style="margin-top:1.25rem; font-size:0.85rem; color:var(--text-secondary);">
+        Everything you enter stays on this device. Use <strong>💾 Data</strong> at any time to export a backup.
+    </p>
+</div>
+{% endblock %}

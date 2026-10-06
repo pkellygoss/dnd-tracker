@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+{% block title %}Images — D&amp;D Tracker{% endblock %}
+{% block content %}
+<div class="gen-page">
+    <div class="journal-header">
+        <h1 class="page-title">Image Generator</h1>
+    </div>
+
+    {% if not has_api_key %}
+    <div class="panel gen-warning">
+        No Azure API key is saved on this device, so images can't be generated yet.
+        <a href="{{ url_for('settings_page') }}">Add it in Settings</a>.
+    </div>
+    {% endif %}
+
+    <!-- Style -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">1 · Style</h2>
+            <button class="btn btn-sm btn-edit" onclick="togglePresetEditor()" id="preset-edit-toggle">Edit presets</button>
+        </div>
+        <select id="gen-preset" class="input-field" onchange="onPresetChange()"></select>
+        <p class="gen-preset-text" id="gen-preset-text"></p>
+
+        <div class="gen-preset-editor hidden" id="preset-editor">
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label for="preset-name">Preset name</label>
+                    <input type="text" id="preset-name" class="input-field">
+                </div>
+                <div class="form-row">
+                    <label for="preset-size">Default size</label>
+                    <select id="preset-size" class="input-field">
+                        {% for s in sizes %}<option value="{{ s.value }}">{{ s.label }} · {{ s.value }}</option>{% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <label for="preset-text">Style text (goes at the start of every prompt)</label>
+                <textarea id="preset-text" class="input-field textarea-field" rows="6"></textarea>
+            </div>
+            <div class="gen-button-row">
+                <button class="btn btn-gold" onclick="savePresetEdits(false)">Save</button>
+                <button class="btn" onclick="savePresetEdits(true)">Save as new preset</button>
+                <button class="btn btn-danger" onclick="deleteCurrentPreset()">Delete</button>
+                <button class="btn" onclick="resetAllPresets()">Reset to built-in presets</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Include -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">2 · Who and what</h2>
+        </div>
+        <div class="tag-input-wrap gen-search-wrap">
+            <input type="text" id="gen-search" class="tag-search-input" autocomplete="off"
+                   placeholder="Search characters, party, world notes, journal entries…"
+                   oninput="onSourceSearch()" onfocus="onSourceSearch()" onkeydown="onSourceKeydown(event)">
+            <div class="tag-dropdown hidden" id="gen-search-dropdown"></div>
+        </div>
+        <p class="gen-hint">Each pick adds its Appearance (or description / summary) to the prompt. Edit the text below for this image; for characters, party members and world notes you can save it back as their Appearance.</p>
+        <div class="gen-chips" id="gen-chips"></div>
+    </div>
+
+    <!-- Scene -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">3 · Scene</h2>
+        </div>
+        <textarea id="gen-scene" class="input-field textarea-field" rows="5" oninput="onPartsChanged()"
+                  placeholder="What's happening? Where are they, what are they doing, what's the mood and lighting?"></textarea>
+    </div>
+
+    <!-- Prompt + generate -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">4 · Prompt</h2>
+            <span class="gen-count" id="gen-count"></span>
+        </div>
+        <textarea id="gen-prompt" class="input-field textarea-field gen-prompt" rows="10" oninput="onPromptEdited()"></textarea>
+        <div class="gen-hint hidden" id="gen-prompt-edited">
+            You've edited the prompt by hand, so changes above no longer update it.
+            <a href="javascript:void(0)" onclick="rebuildPrompt(true)">Rebuild it from the parts above</a>
+        </div>
+        <div class="form-row-group" style="margin-top:0.75rem;">
+            <div class="form-row">
+                <label for="gen-size">Size</label>
+                <select id="gen-size" class="input-field" onchange="saveDraft()">
+                    {% for s in sizes %}<option value="{{ s.value }}">{{ s.label }} · {{ s.value }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-row">
+                <label for="gen-quality">Quality</label>
+                <select id="gen-quality" class="input-field" onchange="saveDraft()">
+                    {% for q in qualities %}<option value="{{ q }}" {% if q == 'medium' %}selected{% endif %}>{{ q|title }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="gen-button-row">
+            <button class="btn btn-gold gen-go" id="gen-go" onclick="startGeneration()" {% if not has_api_key %}disabled{% endif %}>🎨 Generate</button>
+            <button class="btn hidden" id="gen-cancel" onclick="cancelGeneration()">Cancel</button>
+            <span class="gen-status" id="gen-status"></span>
+        </div>
+    </div>
+
+    <!-- Result -->
+    <div class="panel hidden" id="gen-result">
+        <div class="panel-header">
+            <h2 class="panel-title" id="gen-result-title">Result</h2>
+            <span class="gen-count" id="gen-result-meta"></span>
+        </div>
+        <img id="gen-result-img" class="gen-result-img" alt="Generated image">
+        <details class="gen-result-prompt"><summary>Prompt used</summary><pre id="gen-result-prompt"></pre></details>
+        <div class="gen-attach-row">
+            <select id="gen-attach-target" class="input-field">
+                <option value="">Attach to…</option>
+                {% for t in targets %}<option value="{{ t.type }}|{{ t.id }}">{{ t.label }}</option>{% endfor %}
+            </select>
+            <button class="btn btn-gold" onclick="attachCurrent()">Attach</button>
+            <button class="btn" onclick="saveCurrentToDevice()">⬇ Save to device</button>
+            <button class="btn btn-danger" onclick="deleteCurrent()">Delete</button>
+        </div>
+    </div>
+
+    <!-- Gallery -->
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Recent ({{ gallery|length }}/{{ gallery_max }})</h2>
+        </div>
+        <p class="gen-hint">Only the last {{ gallery_max }} images are kept; older ones are deleted automatically. Attach or save the ones you want to keep.</p>
+        <div class="gen-gallery" id="gen-gallery"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PRESETS_INITIAL = {{ presets|tojson }};
+const SOURCES = {{ sources|tojson }};
+let GALLERY = {{ gallery|tojson }};
+const ICONS = { character: '🧝', party: '🛡', world: '🌍', journal: '📖' };
+const TYPE_LABEL = { character: 'Character', party: 'Party', world: 'World', journal: 'Journal' };
+const DRAFT_KEY = 'dnd.imagegen.draft';
+
+let presets = PRESETS_INITIAL.slice();
+let items = [];               // [{type, id, name, text}]
+let promptEdited = false;
+let searchIndex = -1;
+let currentKey = null;        // gallery key shown in the result panel
+let controller = null;        // AbortController while generating
+
+// ---------------------------------------------------------------- draft (kept between visits)
+function saveDraft() {
+    try {
+        localStorage.setItem(DRAFT_KEY, JSON.stringify({
+            presetId: document.getElementById('gen-preset').value,
+            scene: document.getElementById('gen-scene').value,
+            items, promptEdited,
+            prompt: promptEdited ? document.getElementById('gen-prompt').value : null,
+            size: document.getElementById('gen-size').value,
+            quality: document.getElementById('gen-quality').value,
+        }));
+    } catch { /* storage unavailable: drafts just aren't remembered */ }
+}
+function loadDraft() {
+    try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; }
+}
+
+// ---------------------------------------------------------------- presets
+function currentPreset() {
+    const id = document.getElementById('gen-preset').value;
+    return presets.find(p => p.id === id) || presets[0];
+}
+function renderPresetSelect(selectId) {
+    const sel = document.getElementById('gen-preset');
+    sel.replaceChildren(...presets.map(p => new Option(p.name, p.id)));
+    sel.value = presets.some(p => p.id === selectId) ? selectId : presets[0].id;
+    document.getElementById('gen-preset-text').textContent = currentPreset().text;
+    fillPresetEditor();
+}
+function onPresetChange() {
+    const p = currentPreset();
+    document.getElementById('gen-preset-text').textContent = p.text;
+    if (p.size) document.getElementById('gen-size').value = p.size;
+    fillPresetEditor();
+    onPartsChanged();
+}
+function togglePresetEditor() {
+    const ed = document.getElementById('preset-editor');
+    ed.classList.toggle('hidden');
+    document.getElementById('preset-edit-toggle').textContent = ed.classList.contains('hidden') ? 'Edit presets' : 'Done';
+}
+function fillPresetEditor() {
+    const p = currentPreset();
+    document.getElementById('preset-name').value = p.name;
+    document.getElementById('preset-size').value = p.size || '1024x1536';
+    document.getElementById('preset-text').value = p.text;
+}
+async function savePresetEdits(asNew) {
+    const data = {
+        id: asNew ? null : currentPreset().id,
+        name: document.getElementById('preset-name').value + (asNew && document.getElementById('preset-name').value === currentPreset().name ? ' (copy)' : ''),
+        size: document.getElementById('preset-size').value,
+        text: document.getElementById('preset-text').value,
+    };
+    const result = await api('/api/images/presets/save', data);
+    if (!result?.ok) return;
+    presets = result.presets;
+    renderPresetSelect(result.preset.id);
+    onPresetChange();
+    showToast(asNew ? `Preset "${result.preset.name}" created` : 'Preset saved', 'success');
+}
+async function deleteCurrentPreset() {
+    const p = currentPreset();
+    if (!confirm(`Delete the preset "${p.name}"?`)) return;
+    const result = await api('/api/images/presets/delete', { id: p.id });
+    if (!result?.ok) return;
+    presets = result.presets;
+    renderPresetSelect(presets[0].id);
+    onPresetChange();
+    showToast('Preset deleted', 'info');
+}
+async function resetAllPresets() {
+    if (!confirm('Replace all presets with the built-in ones? Your edits and extra presets will be lost.')) return;
+    const result = await api('/api/images/presets/reset');
+    if (!result?.ok) return;
+    presets = result.presets;
+    renderPresetSelect(presets[0].id);
+    onPresetChange();
+    showToast('Presets reset', 'info');
+}
+
+// ---------------------------------------------------------------- picking sources
+function onSourceSearch() {
+    const q = document.getElementById('gen-search').value.trim().toLowerCase();
+    const dd = document.getElementById('gen-search-dropdown');
+    searchIndex = -1;
+    const taken = new Set(items.map(i => `${i.type}:${i.id}`));
+    const matches = SOURCES.filter(s => !taken.has(`${s.type}:${s.id}`) && (!q || s.name.toLowerCase().includes(q))).slice(0, 12);
+    if (!matches.length) { dd.classList.add('hidden'); return; }
+    dd.replaceChildren(...matches.map((s, i) => {
+        const el = document.createElement('div');
+        el.className = 'tag-dropdown-item';
+        el.textContent = `${ICONS[s.type]} ${s.name}`;
+        const small = document.createElement('span');
+        small.className = 'gen-dd-type';
+        small.textContent = ` · ${TYPE_LABEL[s.type]}${s.has_appearance ? '' : (s.type === 'journal' ? '' : ' (no appearance yet)')}`;
+        el.appendChild(small);
+        el.onmousedown = (e) => { e.preventDefault(); addItem(s); };
+        return el;
+    }));
+    dd.classList.remove('hidden');
+}
+function onSourceKeydown(e) {
+    const dd = document.getElementById('gen-search-dropdown');
+    const els = [...dd.querySelectorAll('.tag-dropdown-item')];
+    if (dd.classList.contains('hidden') || !els.length) return;
+    if (e.key === 'ArrowDown') { e.preventDefault(); searchIndex = Math.min(searchIndex + 1, els.length - 1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); searchIndex = Math.max(searchIndex - 1, 0); }
+    else if (e.key === 'Enter') { e.preventDefault(); els[Math.max(searchIndex, 0)].onmousedown({ preventDefault() {} }); return; }
+    else if (e.key === 'Escape') { dd.classList.add('hidden'); return; }
+    els.forEach((el, i) => el.classList.toggle('highlighted', i === searchIndex));
+}
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.gen-search-wrap')) document.getElementById('gen-search-dropdown')?.classList.add('hidden');
+});
+
+function addItem(source) {
+    items.push({ type: source.type, id: source.id, name: source.name, text: source.text || '' });
+    document.getElementById('gen-search').value = '';
+    document.getElementById('gen-search-dropdown').classList.add('hidden');
+    renderChips();
+    onPartsChanged();
+}
+function removeItem(i) {
+    items.splice(i, 1);
+    renderChips();
+    onPartsChanged();
+}
+function savedTextFor(item) {
+    const s = SOURCES.find(x => x.type === item.type && x.id === item.id);
+    return s && s.has_appearance ? s.text : null;
+}
+function renderChips() {
+    const box = document.getElementById('gen-chips');
+    box.replaceChildren(...items.map((item, i) => {
+        const card = document.createElement('div');
+        card.className = 'gen-chip';
+        const head = document.createElement('div');
+        head.className = 'gen-chip-head';
+        const title = document.createElement('span');
+        title.textContent = `${ICONS[item.type]} ${item.name}`;
+        const remove = document.createElement('button');
+        remove.className = 'tag-pill-remove'; remove.title = 'Remove'; remove.textContent = '×';
+        remove.onclick = () => removeItem(i);
+        head.append(title, remove);
+        const ta = document.createElement('textarea');
+        ta.className = 'input-field textarea-field'; ta.rows = 2; ta.value = item.text;
+        ta.placeholder = item.type === 'journal' ? 'What happened (from the summary)' : 'What they look like…';
+        card.append(head, ta);
+        if (item.type !== 'journal') {
+            const save = document.createElement('button');
+            save.className = 'btn btn-sm gen-chip-save';
+            save.textContent = '💾 Save as appearance';
+            const refresh = () => save.classList.toggle('hidden', !item.text.trim() || item.text === savedTextFor(item));
+            save.onclick = async () => {
+                const r = await api('/api/images/source-appearance', { type: item.type, id: item.id, text: item.text });
+                if (!r?.ok) return;
+                const s = SOURCES.find(x => x.type === item.type && x.id === item.id);
+                if (s) { s.text = item.text; s.has_appearance = true; }
+                refresh();
+                showToast(`Saved as ${item.name}'s appearance`, 'success');
+            };
+            ta.oninput = () => { item.text = ta.value; refresh(); onPartsChanged(); };
+            refresh();
+            card.append(save);
+        } else {
+            ta.oninput = () => { item.text = ta.value; onPartsChanged(); };
+        }
+        return card;
+    }));
+}
+
+// ---------------------------------------------------------------- prompt
+function rebuildPrompt(force) {
+    if (force) promptEdited = false;
+    if (!promptEdited) {
+        document.getElementById('gen-prompt').value = ImageGen.composePrompt({
+            presetText: currentPreset().text,
+            scene: document.getElementById('gen-scene').value,
+            items,
+        });
+    }
+    document.getElementById('gen-prompt-edited').classList.toggle('hidden', !promptEdited);
+    updateCount();
+    saveDraft();
+}
+function onPartsChanged() { rebuildPrompt(false); }
+function onPromptEdited() {
+    promptEdited = true;
+    document.getElementById('gen-prompt-edited').classList.remove('hidden');
+    updateCount();
+    saveDraft();
+}
+function updateCount() {
+    const n = document.getElementById('gen-prompt').value.length;
+    const el = document.getElementById('gen-count');
+    el.textContent = `${n.toLocaleString()} / 32,000 characters`;
+    el.style.color = n > 32000 ? 'var(--damage)' : '';
+}
+
+// ---------------------------------------------------------------- generate
+let wakeLock = null, tick = null;
+function setBusy(busy) {
+    document.getElementById('gen-go').disabled = busy;
+    document.getElementById('gen-cancel').classList.toggle('hidden', !busy);
+}
+async function startGeneration() {
+    const prompt = document.getElementById('gen-prompt').value.trim();
+    if (!prompt) { showToast('The prompt is empty', 'error'); return; }
+    controller = new AbortController();
+    setBusy(true);
+    const status = document.getElementById('gen-status');
+    const t0 = Date.now();
+    const show = () => { status.textContent = `Generating… ${Math.round((Date.now() - t0) / 1000)}s (usually 30–90s; keep this screen open)`; };
+    show(); tick = setInterval(show, 1000);
+    try { wakeLock = await navigator.wakeLock?.request('screen'); } catch { wakeLock = null; }
+    window.addEventListener('beforeunload', warnLeave);
+    try {
+        const res = await fetch('/api/images/generate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: controller.signal,
+            body: JSON.stringify({
+                prompt,
+                size: document.getElementById('gen-size').value,
+                quality: document.getElementById('gen-quality').value,
+                preset: currentPreset().name,
+            }),
+        });
+        const json = await res.json();
+        if (!res.ok || json.error) {
+            status.textContent = '';
+            showToast(json.error || 'Generation failed', 'error');
+            return;
+        }
+        status.textContent = `Done in ${Math.round((Date.now() - t0) / 1000)}s`;
+        GALLERY = [json.image, ...GALLERY.filter(g => g.key !== json.image.key)].slice(0, {{ gallery_max }});
+        renderGallery();
+        showResult(json.image);
+    } finally {
+        clearInterval(tick);
+        setBusy(false);
+        controller = null;
+        window.removeEventListener('beforeunload', warnLeave);
+        try { await wakeLock?.release(); } catch { /* already released */ }
+    }
+}
+function cancelGeneration() { controller?.abort(); }
+function warnLeave(e) { e.preventDefault(); e.returnValue = ''; }
+
+// ---------------------------------------------------------------- result + gallery
+function showResult(entry, scroll = true) {
+    currentKey = entry.key;
+    const panel = document.getElementById('gen-result');
+    document.getElementById('gen-result-img').src = `idb:${entry.key}`;
+    document.getElementById('gen-result-meta').textContent =
+        `${new Date(entry.created_at).toLocaleString()} · ${entry.size} · ${entry.quality}${entry.preset ? ' · ' + entry.preset : ''}`;
+    document.getElementById('gen-result-prompt').textContent = entry.prompt;
+    document.getElementById('gen-attach-target').value = '';
+    panel.classList.remove('hidden');
+    if (scroll) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+function renderGallery() {
+    const box = document.getElementById('gen-gallery');
+    if (!GALLERY.length) {
+        box.innerHTML = '<span class="empty-text">Nothing generated yet.</span>';
+    } else {
+        box.replaceChildren(...GALLERY.map(g => {
+            const fig = document.createElement('button');
+            fig.className = 'gen-thumb' + (g.key === currentKey ? ' active' : '');
+            fig.title = g.prompt.slice(0, 200);
+            const img = document.createElement('img');
+            img.src = `idb:${g.key}`; img.alt = '';
+            const cap = document.createElement('span');
+            cap.textContent = new Date(g.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+            fig.append(img, cap);
+            fig.onclick = () => { showResult(g); renderGallery(); };
+            return fig;
+        }));
+    }
+    document.querySelector('#gen-gallery').closest('.panel').querySelector('.panel-title').textContent =
+        `Recent (${GALLERY.length}/{{ gallery_max }})`;
+}
+async function attachCurrent() {
+    const v = document.getElementById('gen-attach-target').value;
+    if (!currentKey || !v) { showToast('Choose what to attach it to', 'error'); return; }
+    const [type, id] = v.split('|');
+    const label = document.getElementById('gen-attach-target').selectedOptions[0].textContent;
+    if (!confirm(`Use this image for "${label}"? It replaces the current image there.`)) return;
+    const result = await api('/api/images/attach', { key: currentKey, type, id });
+    if (result?.ok) showToast(`Attached to ${label}`, 'success');
+}
+async function saveCurrentToDevice() {
+    if (currentKey) await ImageGen.saveToDevice(currentKey);
+}
+async function deleteCurrent() {
+    if (!currentKey || !confirm('Delete this image from the gallery?')) return;
+    const result = await api('/api/images/gallery/delete', { key: currentKey });
+    if (!result?.ok) return;
+    GALLERY = result.gallery;
+    currentKey = null;
+    document.getElementById('gen-result').classList.add('hidden');
+    renderGallery();
+}
+
+// ---------------------------------------------------------------- start
+(function init() {
+    const draft = loadDraft();
+    renderPresetSelect(draft?.presetId || presets[0].id);
+    document.getElementById('gen-size').value = currentPreset().size || '1024x1536';
+    if (draft) {
+        document.getElementById('gen-scene').value = draft.scene || '';
+        // keep only picks that still exist
+        items = (draft.items || []).filter(i => SOURCES.some(s => s.type === i.type && s.id === i.id));
+        if (draft.size) document.getElementById('gen-size').value = draft.size;
+        if (draft.quality) document.getElementById('gen-quality').value = draft.quality;
+        if (draft.promptEdited && draft.prompt) {
+            promptEdited = true;
+            document.getElementById('gen-prompt').value = draft.prompt;
+        }
+    }
+    renderChips();
+    rebuildPrompt(false);
+    renderGallery();
+    if (GALLERY.length) showResult(GALLERY[0], false);
+})();
+</script>
+{% endblock %}

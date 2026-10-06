@@ -1,0 +1,613 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name }} — Journal{% endblock %}
+
+{% block content %}
+<div class="journal-page">
+    <div class="journal-header">
+        <h1 class="page-title">Journal</h1>
+        <button class="btn btn-gold" id="new-entry-btn" onclick="showNewEntryModal()">+ New Entry</button>
+    </div>
+
+<!-- New Entry Modal -->
+<div class="modal-overlay hidden" id="new-entry-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>New Journal Entry</h2>
+            <button class="modal-close" onclick="hideNewEntryModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label>Title</label>
+                <input type="text" id="new-entry-title" class="input-field" placeholder="e.g. The Goblin Ambush">
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Session #</label>
+                    <input type="number" id="new-entry-session" class="input-field input-narrow"
+                           value="{{ (entries[0].session_number + 1) if entries|length else 1 }}" min="1">
+                </div>
+                <div class="form-row">
+                    <label>Date</label>
+                    <input type="date" id="new-entry-date" class="input-field">
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Image (optional)</label>
+                <div class="image-input-group">
+                    <input type="text" id="new-entry-image" class="input-field"
+                           placeholder="filename, URL, or upload →">
+                    <button type="button" class="btn btn-upload" onclick="uploadImage('journal', 'new-entry-image')">📷 Upload</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="hideNewEntryModal()">Cancel</button>
+            <button class="btn btn-gold" onclick="createEntry()">Create Entry</button>
+        </div>
+    </div>
+</div>
+
+    <div class="journal-layout">
+        <!-- Card Grid -->
+        <div class="journal-cards-grid" id="journal-cards-grid">
+            {% for entry in entries %}
+            <div class="journal-card-wrapper" data-entry-id="{{ entry.id }}">
+                <div class="journal-card" onclick="showEntry('{{ entry.id }}')">
+                    <div class="journal-card-image">
+                        {% if entry.image %}
+                        <img src="{{ entry.image|image_url('journal') }}" alt="{{ entry.title }}">
+                        {% else %}
+                        <img src="{{ url_for('static', filename='images/journal/new_entry.png') }}" alt="Session">
+                        {% endif %}
+                    </div>
+                    <div class="journal-card-info">
+                        <div class="journal-card-session">Session {{ entry.session_number }}</div>
+                        <h3 class="journal-card-title">{{ entry.title }}</h3>
+                        <div class="journal-card-date">{{ entry.date }}</div>
+                        {% if entry.summary %}
+                        <p class="journal-card-summary">{{ entry.summary|head(120) }}{% if entry.summary|length > 120 %}…{% endif %}</p>
+                        {% endif %}
+                        {% if entry.tags|length %}
+                        <div class="journal-card-tags">
+                            {% for tag in entry.tags|head(3) %}
+                            {% if tag in world_note_names %}
+                            <span class="journal-tag tag-world">🌍 {{ tag }}</span>
+                            {% else %}
+                            <span class="journal-tag">{{ tag }}</span>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            {% if not entries|length %}
+            <div class="empty-spells" style="grid-column: 1 / -1;">
+                <span class="empty-icon">📖</span>
+                <p>No journal entries yet. Record your first session!</p>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- pwa -->
+        <!-- Entry Reader (shown for #/journal?entry=<id>) -->
+        <div class="journal-editor journal-reader hidden" id="journal-reader">
+            <div class="editor-header">
+                <button class="btn btn-sm" onclick="hideReader()">← Journal</button>
+                <div class="editor-header-actions">
+                    <button class="btn btn-sm btn-gold" onclick="editShownEntry()">✎ Edit</button>
+                </div>
+            </div>
+            <div class="reader-hero">
+                <img src="{{ url_for('static', filename='images/journal/new_entry.png') }}" alt="" id="reader-image">
+            </div>
+            <div class="reader-meta"><span id="reader-session"></span><span class="sep"> • </span><span id="reader-date"></span></div>
+            <h2 class="reader-title" id="reader-title"></h2>
+            <p class="reader-summary hidden" id="reader-summary"></p>
+            <div class="journal-card-tags reader-tags" id="reader-tags"></div>
+            <div class="reader-content" id="reader-content"></div>
+        </div>
+        <!-- /pwa -->
+
+        <!-- Entry Editor (hidden until a card is clicked) -->
+        <div class="journal-editor hidden" id="journal-editor">
+            <div class="editor-header">
+                <button class="btn btn-sm" onclick="closeEditor()">← Back</button>
+                <div class="editor-header-actions">
+                    <span class="editor-save-status" id="editor-save-status"></span>
+                    <button class="btn btn-sm btn-danger" onclick="deleteCurrentEntry()">Delete Entry</button>
+                </div>
+            </div>
+
+            <div class="editor-identity">
+                <div class="editor-image-wrap">
+                    <div class="editor-image" id="editor-image">
+                        <img src="{{ url_for('static', filename='images/journal/new_entry.png') }}" alt="Session" id="editor-image-preview">
+                    </div>
+                    <div class="form-row" style="margin-top: 0.5rem;">
+                        <label>Image</label>
+                        <div class="image-input-group">
+                            <input type="text" id="editor-image-input" class="input-field"
+                                   placeholder="filename, URL, or upload →" onchange="autoSaveEntry()">
+                            <button type="button" class="btn btn-upload" onclick="uploadImage('journal', 'editor-image-input', function(){ autoSaveEntry(); })">📷</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="editor-meta">
+                    <div class="form-row">
+                        <label>Title</label>
+                        <input type="text" id="editor-title" class="input-field journal-title-input"
+                               placeholder="Session title..." onchange="autoSaveEntry()">
+                    </div>
+                    <div class="form-row-group">
+                        <div class="form-row">
+                            <label>Session #</label>
+                            <input type="number" id="editor-session-number" class="input-field input-narrow"
+                                   min="1" onchange="autoSaveEntry()">
+                        </div>
+                        <div class="form-row">
+                            <label>Date</label>
+                            <input type="date" id="editor-date" class="input-field" onchange="autoSaveEntry()">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label>Summary</label>
+                        <input type="text" id="editor-summary" class="input-field"
+                               placeholder="Brief recap for the card preview..." onchange="autoSaveEntry()">
+                    </div>
+                    <div class="form-row">
+                        <label>Tags</label>
+                        <div class="tag-input-wrap" id="tag-input-wrap">
+                            <div class="tag-pills" id="tag-pills"></div>
+                            <input type="text" id="editor-tags-input" class="tag-search-input"
+                                   placeholder="Search world notes or add custom tag..."
+                                   oninput="onTagInput(this.value)"
+                                   onkeydown="onTagKeydown(event)"
+                                   onfocus="onTagInput(this.value)"
+                                   autocomplete="off">
+                            <div class="tag-dropdown hidden" id="tag-dropdown"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="editor-content-wrap">
+                <label class="editor-content-label">Session Notes</label>
+                <textarea id="editor-content" class="journal-content-textarea"
+                          placeholder="Write your session notes here...
+
+What happened? Who did you meet? What did you learn?"
+                          oninput="debouncedAutoSave()"></textarea>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHAR_ID = "{{ char.id }}";
+const DEFAULT_IMAGE = "{{ url_for('static', filename='images/journal/new_entry.png') }}";
+const WORLD_NOTE_NAMES = {{ world_note_names|tojson }};
+const WORLD_NOTE_NAMES_LOWER = WORLD_NOTE_NAMES.map(n => n.toLowerCase());
+
+let currentEntryId = null;
+let autoSaveTimeout = null;
+let currentTags = [];
+let dropdownIndex = -1;
+
+// --- Modal ---
+function showNewEntryModal() {
+    document.getElementById('new-entry-modal')?.classList.remove('hidden');
+    const today = new Date().toISOString().split('T')[0];
+    const dateInput = document.getElementById('new-entry-date');
+    if (dateInput && !dateInput.value) dateInput.value = today;
+}
+function hideNewEntryModal() {
+    document.getElementById('new-entry-modal')?.classList.add('hidden');
+}
+
+// --- Create ---
+async function createEntry() {
+    const title = document.getElementById('new-entry-title')?.value || '';
+    const sessionNum = parseInt(document.getElementById('new-entry-session')?.value) || 1;
+    const date = document.getElementById('new-entry-date')?.value || new Date().toISOString().split('T')[0];
+    const image = document.getElementById('new-entry-image')?.value || '';
+
+    if (!title) {
+        showToast('Title is required', 'error');
+        return;
+    }
+
+    const result = await api('/api/journal/add', {
+        title,
+        session_number: sessionNum,
+        date,
+        image,
+    });
+
+    if (result?.ok) {
+        showToast(`"${title}" created`, 'success');
+        hideNewEntryModal();
+        setTimeout(() => location.reload(), 300);
+    }
+}
+
+// =======================================================================
+// TAG PILL SYSTEM
+// =======================================================================
+
+function isWorldNote(tag) {
+    return WORLD_NOTE_NAMES_LOWER.includes(tag.toLowerCase());
+}
+
+function getWorldNoteName(tag) {
+    // Return the properly-cased world note name if it matches
+    const idx = WORLD_NOTE_NAMES_LOWER.indexOf(tag.toLowerCase());
+    return idx >= 0 ? WORLD_NOTE_NAMES[idx] : tag;
+}
+
+function renderTagPills() {
+    const container = document.getElementById('tag-pills');
+    if (!container) return;
+    container.innerHTML = '';
+    currentTags.forEach((tag, i) => {
+        const pill = document.createElement('span');
+        const isWN = isWorldNote(tag);
+        pill.className = 'tag-pill' + (isWN ? ' tag-pill-world' : ' tag-pill-custom');
+        pill.innerHTML = `${isWN ? '<span class="tag-pill-icon">🌍</span>' : ''}` +
+            `<span class="tag-pill-text">${getWorldNoteName(tag)}</span>` +
+            `<button class="tag-pill-remove" onclick="removeTag(${i})" title="Remove">×</button>`;
+        container.appendChild(pill);
+    });
+}
+
+function addTag(tag) {
+    tag = tag.trim();
+    if (!tag) return;
+    // Use proper casing if it's a world note
+    const display = getWorldNoteName(tag);
+    // Avoid duplicates (case-insensitive)
+    if (currentTags.some(t => t.toLowerCase() === tag.toLowerCase())) return;
+    currentTags.push(display);
+    renderTagPills();
+    autoSaveEntry();
+}
+
+function removeTag(index) {
+    currentTags.splice(index, 1);
+    renderTagPills();
+    autoSaveEntry();
+}
+
+function setTags(tags) {
+    currentTags = (tags || []).slice();
+    renderTagPills();
+}
+
+function getTags() {
+    return currentTags.slice();
+}
+
+// --- Autocomplete dropdown ---
+function onTagInput(value) {
+    const dropdown = document.getElementById('tag-dropdown');
+    if (!dropdown) return;
+
+    const query = value.trim().toLowerCase();
+    dropdownIndex = -1;
+
+    if (!query) {
+        dropdown.classList.add('hidden');
+        return;
+    }
+
+    // Filter world note names that match and aren't already tagged
+    const matches = WORLD_NOTE_NAMES.filter(name =>
+        name.toLowerCase().includes(query) &&
+        !currentTags.some(t => t.toLowerCase() === name.toLowerCase())
+    ).slice(0, 8);
+
+    if (matches.length === 0) {
+        dropdown.classList.add('hidden');
+        return;
+    }
+
+    dropdown.innerHTML = '';
+    matches.forEach((name, i) => {
+        const item = document.createElement('div');
+        item.className = 'tag-dropdown-item';
+        item.innerHTML = `<span class="tag-dropdown-icon">🌍</span> ${name}`;
+        item.onmousedown = (e) => { e.preventDefault(); selectDropdownItem(name); };
+        dropdown.appendChild(item);
+    });
+    dropdown.classList.remove('hidden');
+}
+
+function onTagKeydown(e) {
+    const dropdown = document.getElementById('tag-dropdown');
+    const items = dropdown?.querySelectorAll('.tag-dropdown-item') || [];
+
+    if (e.key === 'ArrowDown' && !dropdown.classList.contains('hidden')) {
+        e.preventDefault();
+        dropdownIndex = Math.min(dropdownIndex + 1, items.length - 1);
+        updateDropdownHighlight(items);
+    } else if (e.key === 'ArrowUp' && !dropdown.classList.contains('hidden')) {
+        e.preventDefault();
+        dropdownIndex = Math.max(dropdownIndex - 1, 0);
+        updateDropdownHighlight(items);
+    } else if (e.key === 'Enter') {
+        e.preventDefault();
+        if (dropdownIndex >= 0 && items[dropdownIndex]) {
+            items[dropdownIndex].onmousedown({preventDefault:()=>{}});
+        } else {
+            // Commit whatever is typed as a custom tag (or comma-separated batch)
+            const input = document.getElementById('editor-tags-input');
+            const parts = input.value.split(',');
+            parts.forEach(p => addTag(p));
+            input.value = '';
+            dropdown.classList.add('hidden');
+        }
+    } else if (e.key === ',' || e.key === 'Tab') {
+        const input = document.getElementById('editor-tags-input');
+        const val = input.value.replace(',', '').trim();
+        if (val) {
+            e.preventDefault();
+            addTag(val);
+            input.value = '';
+            dropdown.classList.add('hidden');
+        }
+    } else if (e.key === 'Backspace' && !e.target.value && currentTags.length > 0) {
+        removeTag(currentTags.length - 1);
+    }
+}
+
+function selectDropdownItem(name) {
+    addTag(name);
+    const input = document.getElementById('editor-tags-input');
+    input.value = '';
+    document.getElementById('tag-dropdown').classList.add('hidden');
+    input.focus();
+}
+
+function updateDropdownHighlight(items) {
+    items.forEach((item, i) => {
+        item.classList.toggle('highlighted', i === dropdownIndex);
+    });
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    if (!e.target.closest('.tag-input-wrap')) {
+        document.getElementById('tag-dropdown')?.classList.add('hidden');
+    }
+});
+
+// =======================================================================
+// ENTRY EDITOR
+// =======================================================================
+
+// --- Open Entry in Editor ---
+async function openEntry(entryId) {
+    const result = await fetch(`/api/journal/${entryId}`).then(r => r.json());
+    if (!result?.ok) {
+        showToast('Could not load entry', 'error');
+        return;
+    }
+
+    const entry = result.entry;
+    currentEntryId = entryId;
+
+    // Populate fields
+    document.getElementById('editor-title').value = entry.title || '';
+    document.getElementById('editor-session-number').value = entry.session_number || 1;
+    document.getElementById('editor-date').value = entry.date || '';
+    document.getElementById('editor-summary').value = entry.summary || '';
+    document.getElementById('editor-content').value = entry.content || '';
+    document.getElementById('editor-image-input').value = entry.image || '';
+
+    // Set tags via pill system
+    setTags(entry.tags || []);
+    document.getElementById('editor-tags-input').value = '';
+
+    // Update image preview
+    const img = document.getElementById('editor-image-preview');
+    if (entry.image) {
+        img.src = resolveImageUrl(entry.image, 'journal');
+        img.onerror = () => { img.src = DEFAULT_IMAGE; };
+    } else {
+        img.src = DEFAULT_IMAGE;
+    }
+
+    // Show editor, hide cards
+    document.getElementById('journal-cards-grid').classList.add('hidden');
+    document.getElementById('new-entry-btn').classList.add('hidden');
+    document.getElementById('journal-editor').classList.remove('hidden');
+    document.getElementById('editor-save-status').textContent = '';
+
+    document.getElementById('editor-content').focus();
+}
+
+// --- Close Editor ---
+function closeEditor() {
+    currentEntryId = null;
+    currentTags = [];
+    document.getElementById('journal-editor').classList.add('hidden');
+    document.getElementById('journal-cards-grid').classList.remove('hidden');
+    document.getElementById('new-entry-btn').classList.remove('hidden');
+    location.reload();
+}
+
+// --- Auto-save ---
+function autoSaveEntry() {
+    if (!currentEntryId) return;
+    clearTimeout(autoSaveTimeout);
+    saveEntry();
+}
+
+function debouncedAutoSave() {
+    if (!currentEntryId) return;
+    clearTimeout(autoSaveTimeout);
+    const status = document.getElementById('editor-save-status');
+    status.textContent = 'Unsaved…';
+    status.style.color = 'var(--hp-yellow)';
+    autoSaveTimeout = setTimeout(saveEntry, 1000);
+}
+
+async function saveEntry() {
+    if (!currentEntryId) return;
+
+    const data = {
+        title: document.getElementById('editor-title')?.value || '',
+        session_number: parseInt(document.getElementById('editor-session-number')?.value) || 1,
+        date: document.getElementById('editor-date')?.value || '',
+        summary: document.getElementById('editor-summary')?.value || '',
+        tags: getTags(),
+        content: document.getElementById('editor-content')?.value || '',
+        image: document.getElementById('editor-image-input')?.value || '',
+    };
+
+    const result = await api(`/api/journal/${currentEntryId}/update`, data);
+    if (result?.ok) {
+        const status = document.getElementById('editor-save-status');
+        status.textContent = 'Saved ✓';
+        status.style.color = 'var(--heal)';
+        setTimeout(() => { if (status.textContent === 'Saved ✓') status.textContent = ''; }, 2000);
+
+        // Update image preview
+        const img = document.getElementById('editor-image-preview');
+        if (data.image) {
+            img.src = resolveImageUrl(data.image, 'journal');
+            img.onerror = () => { img.src = DEFAULT_IMAGE; };
+        } else {
+            img.src = DEFAULT_IMAGE;
+        }
+    }
+}
+
+// --- Delete ---
+async function deleteCurrentEntry() {
+    if (!currentEntryId) return;
+    const title = document.getElementById('editor-title')?.value || 'this entry';
+    if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
+
+    const entryId = currentEntryId;
+    const result = await api(`/api/journal/${entryId}/delete`);
+    if (result?.ok) {
+        showToast(`"${title}" deleted`, 'info');
+        currentEntryId = null;
+        /* pwa */
+        history.replaceState(null, '', '#/journal');
+        /* /pwa */
+        document.getElementById('journal-editor').classList.add('hidden');
+        document.getElementById('journal-cards-grid').classList.remove('hidden');
+        document.getElementById('new-entry-btn').classList.remove('hidden');
+        const wrapper = document.querySelector(`[data-entry-id="${entryId}"]`);
+        if (wrapper) wrapper.remove();
+    }
+}
+
+/* pwa */
+// =======================================================================
+// READ VIEW + @-MENTIONS
+// =======================================================================
+const WORLD_NOTES = {{ world_note_links|tojson }};
+let listScrollY = 0;
+
+function entryIdFromHash() {
+    const m = location.hash.match(/[?&]entry=([^&]+)/);
+    return m ? decodeURIComponent(m[1]) : null;
+}
+
+function showEntry(entryId) {
+    listScrollY = window.scrollY;
+    location.hash = `#/journal?entry=${encodeURIComponent(entryId)}`;
+}
+
+function hideReader() {
+    location.hash = '#/journal';
+}
+
+function editShownEntry() {
+    const id = entryIdFromHash();
+    if (!id) return;
+    document.getElementById('journal-reader').classList.add('hidden');
+    openEntry(id);
+}
+
+function noteLink(name) {
+    const id = Mentions.noteIndex(WORLD_NOTES)[String(name).trim().toLowerCase()];
+    return id ? `#/world?note=${encodeURIComponent(id)}` : null;
+}
+
+async function syncJournalView() {
+    const id = entryIdFromHash();
+    const reader = document.getElementById('journal-reader');
+    const grid = document.getElementById('journal-cards-grid');
+    const newBtn = document.getElementById('new-entry-btn');
+
+    if (!id) {
+        if (currentEntryId) { closeEditor(); return; }   // back button while editing: reload into the list
+        reader.classList.add('hidden');
+        grid.classList.remove('hidden');
+        newBtn.classList.remove('hidden');
+        window.scrollTo(0, listScrollY);
+        return;
+    }
+
+    const result = await fetch(`/api/journal/${encodeURIComponent(id)}`).then(r => r.json());
+    if (!result?.ok) {
+        showToast('That journal entry no longer exists', 'error');
+        history.replaceState(null, '', '#/journal');
+        return syncJournalView();
+    }
+    const entry = result.entry;
+
+    const img = document.getElementById('reader-image');
+    img.onerror = () => { img.onerror = null; img.src = DEFAULT_IMAGE; };
+    img.src = entry.image ? resolveImageUrl(entry.image, 'journal') : DEFAULT_IMAGE;
+    img.alt = entry.title || '';
+    document.getElementById('reader-session').textContent = `Session ${entry.session_number ?? ''}`;
+    document.getElementById('reader-date').textContent = entry.date || '';
+    document.getElementById('reader-title').textContent = entry.title || 'Untitled';
+    const summary = document.getElementById('reader-summary');
+    summary.textContent = entry.summary || '';
+    summary.classList.toggle('hidden', !entry.summary);
+
+    const tags = document.getElementById('reader-tags');
+    tags.replaceChildren(...(entry.tags || []).map(tag => {
+        const href = noteLink(tag);
+        const el = document.createElement(href ? 'a' : 'span');
+        el.className = 'journal-tag' + (href ? ' tag-world' : '');
+        el.textContent = href ? `🌍 ${tag}` : tag;
+        if (href) el.href = href;
+        return el;
+    }));
+
+    const content = document.getElementById('reader-content');
+    if ((entry.content || '').trim()) {
+        Mentions.renderMentions(content, entry.content, WORLD_NOTES);
+    } else {
+        content.innerHTML = '<span class="empty-text">No session notes yet. Tap Edit to write some.</span>';
+    }
+
+    document.getElementById('journal-editor').classList.add('hidden');
+    grid.classList.add('hidden');
+    newBtn.classList.add('hidden');
+    reader.classList.remove('hidden');
+    window.scrollTo(0, 0);
+}
+
+window.addEventListener('hashchange', syncJournalView);
+syncJournalView();
+
+Mentions.attachMentionAutocomplete(document.getElementById('editor-content'), {
+    getNames: () => WORLD_NOTE_NAMES,
+    onChange: debouncedAutoSave,
+});
+/* /pwa */
+</script>
+{% endblock %}

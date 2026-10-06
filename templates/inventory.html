@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name }} — Inventory{% endblock %}
+
+
+{% block content %}
+<div class="inventory-page">
+    <div class="inventory-header">
+        <h1 class="page-title">Inventory</h1>
+        <button class="btn btn-gold" onclick="showAddItemModal()">+ Add Item</button>
+    </div>
+
+    {% set total_weight = items|sum('weight') if items|length else 0 %}
+    {% set gold = char.gold|default(0, true)|int %}
+    {% set silver = char.silver|default(0, true)|int %}
+    {% set copper = char.copper|default(0, true)|int %}
+    {% set total_coin_value = gold + (silver / 10) + (copper / 100) %}
+    <div class="inventory-summary">
+        <span class="inv-stat">{{ items|length }} items</span>
+        <span class="inv-stat">{{ "%.1f"|format(total_weight) }} lb total</span>
+    </div>
+
+<div class="inventory-summary coin-purse">
+    <div class="inv-stat">
+        <div class="coin-field">
+            <label for="gold" class="coin-label">Gold</label>
+            <div class="coin-stepper">
+                <button type="button" class="btn btn-sm coin-btn" onclick="adjustCoin('gold', -1)">−</button>
+                <input
+                    type="number"
+                    id="gold"
+                    class="coin-input"
+                    min="0"
+                    step="1"
+                    value="{{ char.gold or 0 }}"
+                    onchange="normalizeCurrencyInputs()"
+                >
+                <button type="button" class="btn btn-sm coin-btn" onclick="adjustCoin('gold', 1)">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="inv-stat">
+        <div class="coin-field">
+            <label for="silver" class="coin-label">Silver</label>
+            <div class="coin-stepper">
+                <button type="button" class="btn btn-sm coin-btn" onclick="adjustCoin('silver', -1)">−</button>
+                <input
+                    type="number"
+                    id="silver"
+                    class="coin-input"
+                    min="0"
+                    step="1"
+                    value="{{ char.silver or 0 }}"
+                    onchange="normalizeCurrencyInputs()"
+                >
+                <button type="button" class="btn btn-sm coin-btn" onclick="adjustCoin('silver', 1)">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="inv-stat">
+        <div class="coin-field">
+            <label for="copper" class="coin-label">Copper</label>
+            <div class="coin-stepper">
+                <button type="button" class="btn btn-sm coin-btn" onclick="adjustCoin('copper', -1)">−</button>
+                <input
+                    type="number"
+                    id="copper"
+                    class="coin-input"
+                    min="0"
+                    step="1"
+                    value="{{ char.copper or 0 }}"
+                    onchange="normalizeCurrencyInputs()"
+                >
+                <button type="button" class="btn btn-sm coin-btn" onclick="adjustCoin('copper', 1)">+</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="coin-total">
+        <span class="coin-total-label">Total Value</span>
+        <span class="coin-total-value" id="coin-total-value">
+            {{ "%.2f"|format((char.gold or 0) + ((char.silver or 0) / 10) + ((char.copper or 0) / 100)) }} gp
+        </span>
+    </div>
+
+    <div class="coin-actions">
+        <button class="btn btn-gold" onclick="saveCurrency()">Save Coin Purse</button>
+    </div>
+</div>
+
+    <!-- Add Item Modal -->
+<div class="modal-overlay hidden" id="add-item-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Add Item</h2>
+            <button class="modal-close" onclick="hideAddItemModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label>Item Name</label>
+                <input type="text" id="new-item-name" class="input-field" placeholder="e.g. Lute">
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Quantity</label>
+                    <input type="number" id="new-item-qty" class="input-field input-narrow" value="1" min="1">
+                </div>
+                <div class="form-row">
+                    <label>Weight (lb)</label>
+                    <input type="number" id="new-item-weight" class="input-field input-narrow" value="0" min="0" step="0.1">
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea id="new-item-desc" class="input-field textarea-field" rows="3" placeholder="Item description..."></textarea>
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="new-item-equipped"> Equipped
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="new-item-requires-attunement"> Requires attunement
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="new-item-attuned"> Attuned
+                    </label>
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Effect Preset</label>
+                <select id="new-item-effect-preset" class="input-field" onchange="applyItemEffectPreset()">
+                    <option value="">— None / custom —</option>
+                    <option value="rhythm_makers_drum_1">Rhythm Maker's Drum +1</option>
+                    <option value="rhythm_makers_drum_2">Rhythm Maker's Drum +2</option>
+                    <option value="rhythm_makers_drum_3">Rhythm Maker's Drum +3</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>Effects JSON</label>
+                <textarea id="new-item-effects" class="input-field textarea-field" rows="6"
+                          placeholder='[{"target":"spell_save_dc","mode":"bonus","value":1,"condition":"equipped_and_attuned"}]'></textarea>
+                <p class="edit-hint">Flat bonuses are calculated automatically. Dice effects are saved and shown as reminders.</p>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="hideAddItemModal()">Cancel</button>
+            <button class="btn btn-gold" onclick="saveNewItem()">Add Item</button>
+        </div>
+    </div>
+</div>
+
+    <div class="inventory-categories">
+        <!-- Equipped -->
+        {% set equipped = items|selectattr('equipped')|list %}
+        {% if equipped|length %}
+        <div class="inv-category">
+            <h2 class="inv-category-title">⚔ Equipped</h2>
+            <div class="inv-items-list">
+                {% for item in equipped %}
+                <div class="inv-item equipped" data-item-id="{{ item.id }}">
+                    <div class="inv-item-main">
+                        <span class="inv-item-name">{{ item.name }}</span>
+                        {% if item.quantity > 1 %}
+                        <span class="inv-item-qty">×{{ item.quantity }}</span>
+                        {% endif %}
+                        {% if item.weight %}
+                        <span class="inv-item-weight">{{ item.weight }} lb</span>
+                        {% endif %}
+                    </div>
+                    {% if item.description %}
+                    <div class="inv-item-desc">{{ item.description }}</div>
+                    {% endif %}
+                    {% if item.requires_attunement %}
+                    <div class="inv-item-desc">
+                        <strong>Attunement:</strong> {% if item.attuned %}Attuned{% else %}Not attuned{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if item.effects|length %}
+                    <div class="tag-list">
+                        {% for effect in item.effects %}
+                        <span class="tag">
+                            {{ (effect_target_labels[effect.target] or effect.target) }}
+                            {% if effect.mode == 'dice' %}+{{ effect.value }}{% elif effect.value|int >= 0 %}+{{ effect.value }}{% else %}{{ effect.value }}{% endif %}
+                        </span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="inv-item-actions">
+                        <button class="btn btn-sm" onclick="toggleEquip('{{ item.id }}', false)">Unequip</button>
+                        {% if item.requires_attunement %}
+                        <button class="btn btn-sm" onclick="toggleAttunement('{{ item.id }}', {{ 'false' if item.attuned else 'true' }})">
+                            {% if item.attuned %}Unattune{% else %}Attune{% endif %}
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-sm btn-danger" onclick="deleteItem('{{ item.id }}', {{ item.name|tojson }})">Remove</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Carried -->
+        {% set carried = items|rejectattr('equipped')|list %}
+        {% if carried|length %}
+        <div class="inv-category">
+            <h2 class="inv-category-title">🎒 Carried</h2>
+            <div class="inv-items-list">
+                {% for item in carried %}
+                <div class="inv-item" data-item-id="{{ item.id }}">
+                    <div class="inv-item-main">
+                        <span class="inv-item-name">{{ item.name }}</span>
+                        {% if item.quantity > 1 %}
+                        <span class="inv-item-qty">×{{ item.quantity }}</span>
+                        {% endif %}
+                        {% if item.weight %}
+                        <span class="inv-item-weight">{{ item.weight }} lb</span>
+                        {% endif %}
+                    </div>
+                    {% if item.description %}
+                    <div class="inv-item-desc">{{ item.description }}</div>
+                    {% endif %}
+                    {% if item.requires_attunement %}
+                    <div class="inv-item-desc">
+                        <strong>Attunement:</strong> {% if item.attuned %}Attuned{% else %}Not attuned{% endif %}
+                    </div>
+                    {% endif %}
+                    {% if item.effects|length %}
+                    <div class="tag-list">
+                        {% for effect in item.effects %}
+                        <span class="tag">
+                            {{ (effect_target_labels[effect.target] or effect.target) }}
+                            {% if effect.mode == 'dice' %}+{{ effect.value }}{% elif effect.value|int >= 0 %}+{{ effect.value }}{% else %}{{ effect.value }}{% endif %}
+                        </span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    <div class="inv-item-actions">
+                        <button class="btn btn-sm" onclick="toggleEquip('{{ item.id }}', true)">Equip</button>
+                        {% if item.requires_attunement %}
+                        <button class="btn btn-sm" onclick="toggleAttunement('{{ item.id }}', {{ 'false' if item.attuned else 'true' }})">
+                            {% if item.attuned %}Unattune{% else %}Attune{% endif %}
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-sm" onclick="editItemQty('{{ item.id }}', {{ item.quantity }})">Qty</button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteItem('{{ item.id }}', {{ item.name|tojson }})">Remove</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        {% if not items|length %}
+        <div class="empty-inventory">
+            <span class="empty-icon">🎒</span>
+            <p>Your pack is empty. Add some items!</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHAR_ID = "{{ char.id }}";
+
+function readCurrencyValue(id) {
+    const value = parseInt(document.getElementById(id)?.value ?? '0', 10);
+    return Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
+function getTotalCopperFromInputs() {
+    const gold = readCurrencyValue('gold');
+    const silver = readCurrencyValue('silver');
+    const copper = readCurrencyValue('copper');
+    return (gold * 100) + (silver * 10) + copper;
+}
+
+function setCurrencyFromTotalCopper(totalCopper) {
+    const safeTotal = Math.max(0, parseInt(totalCopper || 0, 10));
+
+    const gold = Math.floor(safeTotal / 100);
+    const remainderAfterGold = safeTotal % 100;
+    const silver = Math.floor(remainderAfterGold / 10);
+    const copper = remainderAfterGold % 10;
+
+    document.getElementById('gold').value = gold;
+    document.getElementById('silver').value = silver;
+    document.getElementById('copper').value = copper;
+
+    updateCoinTotal();
+}
+
+function normalizeCurrencyInputs() {
+    setCurrencyFromTotalCopper(getTotalCopperFromInputs());
+}
+
+function adjustCoin(type, step) {
+    const unitValues = {
+        gold: 100,
+        silver: 10,
+        copper: 1
+    };
+
+    const unit = unitValues[type];
+    if (!unit) return;
+
+    const totalCopper = getTotalCopperFromInputs();
+    const nextTotal = Math.max(0, totalCopper + (unit * step));
+
+    setCurrencyFromTotalCopper(nextTotal);
+}
+
+function updateCoinTotal() {
+    const totalCopper = getTotalCopperFromInputs();
+    const totalGp = totalCopper / 100;
+
+    const totalEl = document.getElementById('coin-total-value');
+    if (totalEl) {
+        totalEl.textContent = `${totalGp.toFixed(2)} gp`;
+    }
+}
+
+async function saveCurrency() {
+    normalizeCurrencyInputs();
+
+    const gold = readCurrencyValue('gold');
+    const silver = readCurrencyValue('silver');
+    const copper = readCurrencyValue('copper');
+
+    const res = await fetch('/api/character/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gold, silver, copper })
+    });
+
+    if (!res.ok) {
+        alert('Failed to save coin purse');
+        return;
+    }
+
+    updateCoinTotal();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    normalizeCurrencyInputs();
+});
+</script>
+{% endblock %}

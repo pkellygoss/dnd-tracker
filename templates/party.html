@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name }} — Party{% endblock %}
+
+{% block content %}
+<div class="party-page">
+    <div class="party-header">
+        <h1 class="page-title">The Party</h1>
+        <button class="btn btn-gold" id="add-member-btn" onclick="showAddMemberModal()">+ Add Member</button>
+    </div>
+
+    <!-- Member Cards Grid -->
+    <div class="party-cards-grid" id="party-cards-grid">
+        {% for member in members %}
+        <div class="party-card-wrapper" data-member-id="{{ member.id }}">
+            <div class="party-card" onclick="openMember('{{ member.id }}')">
+                <div class="party-card-image">
+                    {% if member.image %}
+                    <img src="{{ member.image|image_url('party') }}" alt="{{ member.name }}">
+                    {% else %}
+                    <div class="party-card-placeholder">
+                        <span class="party-card-placeholder-icon">🛡</span>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="party-card-info">
+                    <h3 class="party-card-name">{{ member.name }}</h3>
+                    <div class="party-card-detail">
+                        {% if member.race %}{{ member.race }}{% endif %}
+                        {% if member.race and member.char_class %} · {% endif %}
+                        {% if member.char_class %}{{ member.char_class }}{% endif %}
+                    </div>
+                    {% if member.backstory %}
+                    <p class="party-card-snippet">{{ member.backstory|head(100) }}{% if member.backstory|length > 100 %}…{% endif %}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not members|length %}
+        <div class="empty-spells" style="grid-column: 1 / -1;">
+            <span class="empty-icon">🛡</span>
+            <p>No party members yet. Add your companions!</p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Member Editor (hidden until a card is clicked) -->
+    <div class="party-editor hidden" id="party-editor">
+        <div class="editor-header">
+            <button class="btn btn-sm" onclick="closeMemberEditor()">← Back</button>
+            <div class="editor-header-actions">
+                <span class="editor-save-status" id="party-save-status"></span>
+                <button class="btn btn-sm btn-danger" onclick="deleteCurrentMember()">Remove from Party</button>
+            </div>
+        </div>
+
+        <div class="party-editor-identity">
+            <div class="party-editor-portrait">
+                <div class="party-portrait-frame" id="party-portrait-frame">
+                    <img src="" alt="Portrait" id="party-portrait-preview">
+                    <div class="party-portrait-placeholder hidden" id="party-portrait-placeholder">🛡</div>
+                </div>
+                <div class="form-row" style="margin-top:0.5rem;">
+                    <label>Portrait</label>
+                    <div class="image-input-group">
+                        <input type="text" id="party-edit-image" class="input-field"
+                               placeholder="filename, URL, or upload →" onchange="partyAutoSave()">
+                        <button type="button" class="btn btn-upload" onclick="uploadImage('party', 'party-edit-image', function(){ partyAutoSave(); })">📷</button>
+                    </div>
+                </div>
+            </div>
+            <div class="party-editor-meta">
+                <div class="form-row">
+                    <label>Name</label>
+                    <input type="text" id="party-edit-name" class="input-field party-name-input"
+                           placeholder="Character name" onchange="partyAutoSave()">
+                </div>
+                <div class="form-row-group">
+                    <div class="form-row">
+                        <label>Race</label>
+                        <input type="text" id="party-edit-race" class="input-field"
+                               placeholder="e.g. Half-Elf" onchange="partyAutoSave()">
+                    </div>
+                    <div class="form-row">
+                        <label>Class</label>
+                        <input type="text" id="party-edit-class" class="input-field"
+                               placeholder="e.g. Fighter 5" onchange="partyAutoSave()">
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="party-editor-fields">
+            <!-- pwa -->
+            <div class="party-field-group">
+                <label class="party-field-label">Appearance</label>
+                <textarea id="party-edit-appearance" class="party-field-textarea"
+                          placeholder="What they look like: face, hair, build, clothing, distinctive features... (used by the image generator)"
+                          oninput="partyDebouncedSave()"></textarea>
+            </div>
+            <!-- /pwa -->
+            <div class="party-field-group">
+                <label class="party-field-label">Spells & Abilities</label>
+                <textarea id="party-edit-spells" class="party-field-textarea"
+                          placeholder="Notable spells, class features, racial abilities..."
+                          oninput="partyDebouncedSave()"></textarea>
+            </div>
+            <div class="party-field-group">
+                <label class="party-field-label">Backstory</label>
+                <textarea id="party-edit-backstory" class="party-field-textarea"
+                          placeholder="Background, motivations, secrets..."
+                          oninput="partyDebouncedSave()"></textarea>
+            </div>
+            <div class="party-field-group">
+                <label class="party-field-label">Events</label>
+                <textarea id="party-edit-events" class="party-field-textarea"
+                          placeholder="Key moments, turning points, developments..."
+                          oninput="partyDebouncedSave()"></textarea>
+            </div>
+            <div class="party-field-group">
+                <label class="party-field-label">Items</label>
+                <textarea id="party-edit-items" class="party-field-textarea"
+                          placeholder="Notable gear, magic items, quest items..."
+                          oninput="partyDebouncedSave()"></textarea>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Member Modal -->
+<div class="modal-overlay hidden" id="add-member-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Add Party Member</h2>
+            <button class="modal-close" onclick="hideAddMemberModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label>Name</label>
+                <input type="text" id="new-member-name" class="input-field" placeholder="e.g. Thorin Ironforge">
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Race</label>
+                    <input type="text" id="new-member-race" class="input-field" placeholder="e.g. Dwarf">
+                </div>
+                <div class="form-row">
+                    <label>Class</label>
+                    <input type="text" id="new-member-class" class="input-field" placeholder="e.g. Paladin 5">
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Portrait (optional)</label>
+                <div class="image-input-group">
+                    <input type="text" id="new-member-image" class="input-field"
+                           placeholder="filename, URL, or upload →">
+                    <button type="button" class="btn btn-upload" onclick="uploadImage('party', 'new-member-image')">📷 Upload</button>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="hideAddMemberModal()">Cancel</button>
+            <button class="btn btn-gold" onclick="createMember()">Add to Party</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHAR_ID = "{{ char.id }}";
+let currentMemberId = null;
+let partySaveTimeout = null;
+
+// --- Modal ---
+function showAddMemberModal() {
+    document.getElementById('add-member-modal')?.classList.remove('hidden');
+}
+function hideAddMemberModal() {
+    document.getElementById('add-member-modal')?.classList.add('hidden');
+}
+
+// --- Create ---
+async function createMember() {
+    const name = document.getElementById('new-member-name')?.value || '';
+    if (!name) { showToast('Name is required', 'error'); return; }
+
+    const result = await api('/api/party/add', {
+        name,
+        race: document.getElementById('new-member-race')?.value || '',
+        char_class: document.getElementById('new-member-class')?.value || '',
+        image: document.getElementById('new-member-image')?.value || '',
+    });
+
+    if (result?.ok) {
+        showToast(`${name} joined the party!`, 'success');
+        hideAddMemberModal();
+        setTimeout(() => location.reload(), 300);
+    }
+}
+
+// --- Open Member Editor ---
+async function openMember(memberId) {
+    const result = await fetch(`/api/party/${memberId}`).then(r => r.json());
+    if (!result?.ok) { showToast('Could not load member', 'error'); return; }
+
+    const m = result.member;
+    currentMemberId = memberId;
+
+    document.getElementById('party-edit-name').value = m.name || '';
+    document.getElementById('party-edit-race').value = m.race || '';
+    document.getElementById('party-edit-class').value = m.char_class || '';
+    document.getElementById('party-edit-image').value = m.image || '';
+    document.getElementById('party-edit-spells').value = m.spells_abilities || '';
+    document.getElementById('party-edit-backstory').value = m.backstory || '';
+    document.getElementById('party-edit-events').value = m.events || '';
+    document.getElementById('party-edit-items').value = m.items || '';
+    /* pwa */
+    document.getElementById('party-edit-appearance').value = m.appearance || '';
+    /* /pwa */
+
+    // Portrait
+    const img = document.getElementById('party-portrait-preview');
+    const placeholder = document.getElementById('party-portrait-placeholder');
+    if (m.image) {
+        img.src = resolveImageUrl(m.image, 'party');
+        img.classList.remove('hidden');
+        placeholder.classList.add('hidden');
+        img.onerror = () => { img.classList.add('hidden'); placeholder.classList.remove('hidden'); };
+    } else {
+        img.classList.add('hidden');
+        placeholder.classList.remove('hidden');
+    }
+
+    // Show editor, hide cards
+    document.getElementById('party-cards-grid').classList.add('hidden');
+    document.getElementById('add-member-btn').classList.add('hidden');
+    document.getElementById('party-editor').classList.remove('hidden');
+    document.getElementById('party-save-status').textContent = '';
+}
+
+// --- Close Editor ---
+function closeMemberEditor() {
+    currentMemberId = null;
+    document.getElementById('party-editor').classList.add('hidden');
+    document.getElementById('party-cards-grid').classList.remove('hidden');
+    document.getElementById('add-member-btn').classList.remove('hidden');
+    location.reload();
+}
+
+// --- Auto-save ---
+function partyAutoSave() {
+    if (!currentMemberId) return;
+    clearTimeout(partySaveTimeout);
+    savePartyMember();
+}
+
+function partyDebouncedSave() {
+    if (!currentMemberId) return;
+    clearTimeout(partySaveTimeout);
+    const status = document.getElementById('party-save-status');
+    status.textContent = 'Unsaved…';
+    status.style.color = 'var(--hp-yellow)';
+    partySaveTimeout = setTimeout(savePartyMember, 1000);
+}
+
+async function savePartyMember() {
+    if (!currentMemberId) return;
+
+    const data = {
+        name: document.getElementById('party-edit-name')?.value || '',
+        race: document.getElementById('party-edit-race')?.value || '',
+        char_class: document.getElementById('party-edit-class')?.value || '',
+        image: document.getElementById('party-edit-image')?.value || '',
+        spells_abilities: document.getElementById('party-edit-spells')?.value || '',
+        backstory: document.getElementById('party-edit-backstory')?.value || '',
+        events: document.getElementById('party-edit-events')?.value || '',
+        items: document.getElementById('party-edit-items')?.value || '',
+        /* pwa */
+        appearance: document.getElementById('party-edit-appearance')?.value || '',
+        /* /pwa */
+    };
+
+    const result = await api(`/api/party/${currentMemberId}/update`, data);
+    if (result?.ok) {
+        const status = document.getElementById('party-save-status');
+        status.textContent = 'Saved ✓';
+        status.style.color = 'var(--heal)';
+        setTimeout(() => { if (status.textContent === 'Saved ✓') status.textContent = ''; }, 2000);
+
+        // Update portrait
+        const img = document.getElementById('party-portrait-preview');
+        const placeholder = document.getElementById('party-portrait-placeholder');
+        if (data.image) {
+            img.src = resolveImageUrl(data.image, 'party');
+            img.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            img.onerror = () => { img.classList.add('hidden'); placeholder.classList.remove('hidden'); };
+        } else {
+            img.classList.add('hidden');
+            placeholder.classList.remove('hidden');
+        }
+    }
+}
+
+// --- Delete ---
+async function deleteCurrentMember() {
+    if (!currentMemberId) return;
+    const name = document.getElementById('party-edit-name')?.value || 'this member';
+    if (!confirm(`Remove ${name} from the party?`)) return;
+
+    const memberId = currentMemberId;
+    const result = await api(`/api/party/${memberId}/delete`);
+    if (result?.ok) {
+        showToast(`${name} removed from party`, 'info');
+        currentMemberId = null;
+        document.getElementById('party-editor').classList.add('hidden');
+        document.getElementById('party-cards-grid').classList.remove('hidden');
+        document.getElementById('add-member-btn').classList.remove('hidden');
+        const wrapper = document.querySelector(`[data-member-id="${memberId}"]`);
+        if (wrapper) wrapper.remove();
+    }
+}
+</script>
+{% endblock %}

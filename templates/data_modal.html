@@ -1,0 +1,18 @@
+<!-- Data / backup modal (PWA only) -->
+<div class="modal-overlay hidden" id="data-modal">
+    <div class="modal-content">
+        <h2>💾 Your data</h2>
+        <p style="margin:0 0 0.75rem;">Everything lives on this device only. Back it up regularly: if the browser's storage is ever cleared, a backup file is the only way to get it back.</p>
+        <div id="data-status" class="data-status" style="margin-bottom:0.75rem; font-size:0.9rem; opacity:0.85;">Checking storage…</div>
+        <div style="display:flex; flex-direction:column; gap:0.5rem;">
+            <button class="btn btn-gold" id="data-export-btn" onclick="exportBackupFile()">⬇ Export backup</button>
+            <button class="btn" onclick="document.getElementById('data-import-file').click()">⬆ Import backup…</button>
+            <input type="file" id="data-import-file" accept=".zip,application/zip" class="hidden" onchange="importBackupFile(this)">
+        </div>
+        <p style="margin:0.75rem 0 0; font-size:0.85rem; opacity:0.8;">Importing <strong>replaces everything</strong> currently on this device.</p>
+        <div id="data-progress" class="hidden" style="margin-top:0.5rem;"></div>
+        <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+            <button class="btn" onclick="hideDataModal()">Close</button>
+        </div>
+    </div>
+</div>

@@ -1,0 +1,635 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name if char else 'No Character' }} — Character Sheet{% endblock %}
+
+{% block content %}
+{% if not char %}
+<div class="panel" style="text-align:center; padding:2rem;">
+    <h2>No Character Selected</h2>
+    <p style="margin:1rem 0; color:var(--text-secondary);">Create a character to get started.</p>
+    <button class="btn btn-gold" onclick="showNewCharModal()">+ Create Character</button>
+</div>
+{% else %}
+<div class="sheet-grid">
+
+    <!-- ============================================================ -->
+    <!-- LEFT COLUMN: Identity + Ability Scores + Saves               -->
+    <!-- ============================================================ -->
+    <section class="sheet-column col-left">
+
+        <!-- Character Identity -->
+        <div class="panel panel-identity">
+            <div class="panel-header">
+                <h2 class="panel-title">Identity</h2>
+                <button class="btn btn-sm btn-edit" onclick="toggleEditPanel('identity')">Edit</button>
+            </div>
+            <div class="identity-display" id="identity-display">
+                <div class="identity-portrait">
+                    {% if char.portrait %}
+                    <img src="{{ char.portrait|image_url('character') }}" alt="Portrait" class="char-portrait">
+                    {% else %}
+                    <div class="char-portrait-placeholder">⚔</div>
+                    {% endif %}
+                </div>
+                <h1 class="char-name">{{ char.name }}</h1>
+                <div class="char-meta">
+                    <span>{{ char.race or '—' }}</span>
+                    <span class="sep">•</span>
+                    <span>{{ char.background or '—' }}</span>
+                    <span class="sep">•</span>
+                    <span>{{ char.alignment or '—' }}</span>
+                </div>
+                <div class="char-class-badge">
+                    Level {{ char.level }} {{ char.subclass }} {{ char.class }}
+                </div>
+                <!-- pwa -->
+                {% if char.appearance %}
+                <p class="char-appearance" style="margin:0.6rem auto 0; max-width:36rem; font-style:italic; color:var(--text-secondary); white-space:pre-line;">{{ char.appearance }}</p>
+                {% endif %}
+                <!-- /pwa -->
+            </div>
+            <div class="identity-edit hidden" id="identity-edit">
+                <div class="form-row">
+                    <label>Name</label>
+                    <input type="text" id="edit-name" value="{{ char.name }}" class="input-field">
+                </div>
+                <div class="form-row-group">
+                    <div class="form-row">
+                        <label>Class</label>
+                        <select id="edit-class" class="input-field" onchange="updateEditSubclassOptions()">
+                            {% for cls in class_list %}
+                            <option value="{{ cls }}" {% if cls == char.class %}selected{% endif %}>{{ cls }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>Subclass</label>
+                        <select id="edit-subclass" class="input-field">
+                            <option value="">— None —</option>
+                            {% for sub in (subclass_options[char.class] or []) %}
+                            <option value="{{ sub }}" {% if sub == char.subclass %}selected{% endif %}>{{ sub }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="form-row-group">
+                    <div class="form-row">
+                        <label>Race</label>
+                        <input type="text" id="edit-race" value="{{ char.race }}" class="input-field">
+                    </div>
+                    <div class="form-row">
+                        <label>Level</label>
+                        <input type="number" id="edit-level" value="{{ char.level }}" min="1" max="20" class="input-field input-narrow">
+                    </div>
+                </div>
+                <div class="form-row-group">
+                    <div class="form-row">
+                        <label>Background</label>
+                        <input type="text" id="edit-background" value="{{ char.background }}" class="input-field">
+                    </div>
+                    <div class="form-row">
+                        <label>Alignment</label>
+                        <input type="text" id="edit-alignment" value="{{ char.alignment }}" class="input-field">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label>Portrait</label>
+                    <div class="image-input-group">
+                        <input type="text" id="edit-portrait" value="{{ char.portrait }}" class="input-field"
+                               placeholder="filename, URL, or upload →">
+                        <button type="button" class="btn btn-upload" onclick="uploadImage('character', 'edit-portrait')">📷</button>
+                    </div>
+                </div>
+                <!-- pwa -->
+                <div class="form-row">
+                    <label>Appearance</label>
+                    <textarea id="edit-appearance" class="input-field textarea-field" rows="4"
+                              placeholder="What they look like: face, hair, build, clothing, distinctive features... (used by the image generator)">{{ char.appearance }}</textarea>
+                </div>
+                <!-- /pwa -->
+                <button class="btn btn-gold" onclick="saveIdentity()">Save Changes</button>
+            </div>
+        </div>
+
+        <!-- Ability Scores -->
+        <div class="panel panel-abilities">
+            <div class="panel-header">
+                <h2 class="panel-title">Ability Scores</h2>
+                <button class="btn btn-sm btn-edit" onclick="toggleEditPanel('abilities')">Edit</button>
+            </div>
+            <div class="ability-grid" id="abilities-display">
+                {% for ab in ability_names %}
+                <div class="ability-card">
+                    <div class="ability-label">{{ ability_labels[ab] }}</div>
+                    <div class="ability-modifier">{{ char.ability_modifiers[ab]|modifier_str }}</div>
+                    <div class="ability-score">{{ char.ability_scores[ab] }}</div>
+                    {% if char.base_ability_scores and (char.base_ability_scores[ab] if ab in char.base_ability_scores else char.ability_scores[ab]) != char.ability_scores[ab] %}
+                    <div class="edit-hint">base {{ char.base_ability_scores[ab] }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="ability-edit hidden" id="abilities-edit">
+                <div class="ability-edit-grid">
+                    {% for ab in ability_names %}
+                    <div class="ability-edit-row">
+                        <label>{{ ability_labels[ab] }}</label>
+                        <input type="number" id="edit-{{ ab }}" value="{{ (char.base_ability_scores[ab] if ab in char.base_ability_scores else char.ability_scores[ab]) }}" min="1" max="30" class="input-field input-narrow" data-ability="{{ ab }}">
+                        <span class="ability-edit-mod">({{ char.ability_modifiers[ab]|modifier_str }})</span>
+                    </div>
+                    {% endfor %}
+                </div>
+                <button class="btn btn-gold" onclick="saveAbilities()">Save Scores</button>
+            </div>
+        </div>
+
+        <!-- Saving Throws -->
+        <div class="panel panel-saves">
+            <div class="panel-header">
+                <h2 class="panel-title">Saving Throws</h2>
+            </div>
+            <div class="saves-list">
+                {% for ab in ability_names %}
+                <div class="save-row {% if char.saves[ab].proficient %}proficient{% endif %}">
+                    <span class="save-pip {% if char.saves[ab].proficient %}filled{% endif %}">●</span>
+                    <span class="save-bonus">{{ char.saves[ab].bonus|modifier_str }}</span>
+                    <span class="save-name">{{ ability_labels[ab] }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- Proficiency & Senses -->
+        <div class="panel panel-prof">
+            <div class="stat-row">
+                <span class="stat-label">Proficiency Bonus</span>
+                <span class="stat-value gold">+{{ char.proficiency_bonus }}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Passive Perception</span>
+                <span class="stat-value">{{ char.passive_perception }}</span>
+            </div>
+            {% if char.class == 'Bard' %}
+            <div class="stat-row">
+                <span class="stat-label">Inspiration Die</span>
+                <span class="stat-value gold">{{ char.bardic_inspiration_die }}</span>
+            </div>
+            {% endif %}
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- CENTER COLUMN: Combat + HP + Skills                          -->
+    <!-- ============================================================ -->
+    <section class="sheet-column col-center">
+
+        <!-- Combat Stats -->
+        <div class="combat-bar">
+            <div class="combat-stat">
+                <div class="combat-stat-value">{{ char.ac }}</div>
+                <div class="combat-stat-label">AC</div>
+            </div>
+            <div class="combat-stat">
+                <div class="combat-stat-value">{{ char.initiative|modifier_str }}</div>
+                <div class="combat-stat-label">Initiative</div>
+            </div>
+            <div class="combat-stat">
+                <div class="combat-stat-value">{{ char.speed }}ft</div>
+                <div class="combat-stat-label">Speed</div>
+            </div>
+            {% if char.spellcasting_ability %}
+            <div class="combat-stat">
+                <div class="combat-stat-value">{{ char.spell_save_dc }}</div>
+                <div class="combat-stat-label">Spell DC</div>
+            </div>
+            <div class="combat-stat">
+                <div class="combat-stat-value">{{ char.spell_attack|modifier_str }}</div>
+                <div class="combat-stat-label">Spell Atk</div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- HP Panel -->
+        <div class="panel panel-hp">
+            <div class="hp-display">
+                <div class="hp-current-wrap">
+                    <input type="number" id="hp-current" class="hp-input" value="{{ char.hp_current }}"
+                           onchange="updateHP()" min="0" max="999">
+                    <span class="hp-divider">/</span>
+                    <input type="number" id="hp-max" class="hp-input hp-max-input" value="{{ char.hp_max }}"
+                           data-effect-bonus="{{ char.hp_max - char.base_hp_max }}"
+                           onchange="updateHP()" min="0" max="999">
+                </div>
+                <div class="hp-label">Hit Points</div>
+                <div class="hp-temp-wrap">
+                    <label class="hp-temp-label">Temp</label>
+                    <input type="number" id="hp-temp" class="hp-input hp-temp-input" value="{{ char.hp_temp }}"
+                           onchange="updateHP()" min="0" max="999">
+                </div>
+            </div>
+            <div class="hp-bar-track">
+                {% set hp_pct = (char.hp_current / char.hp_max * 100) if char.hp_max > 0 else 100 %}
+                <div class="hp-bar-fill" id="hp-bar" style="width: {{ hp_pct }}%"></div>
+            </div>
+            <div class="hp-quick-buttons">
+                <button class="btn btn-sm btn-damage" onclick="quickHP(-5)">-5</button>
+                <button class="btn btn-sm btn-damage" onclick="quickHP(-1)">-1</button>
+                <button class="btn btn-sm btn-heal" onclick="quickHP(1)">+1</button>
+                <button class="btn btn-sm btn-heal" onclick="quickHP(5)">+5</button>
+            </div>
+        </div>
+
+        <!-- Hit Dice & Death Saves -->
+        <div class="panel-row">
+            <div class="panel panel-hitdice">
+                <div class="panel-header">
+                    <h3 class="panel-title-sm">Hit Dice</h3>
+                    <button class="btn btn-sm" onclick="spendHitDie()" title="Spend one hit die">Spend</button>
+                </div>
+                <div class="hitdice-display">
+                    <span class="hitdice-remaining" id="hitdice-remaining">{{ char.hit_dice_remaining }}</span>
+                    <span class="hitdice-sep">/</span>
+                    <span class="hitdice-total">{{ char.hit_dice_total }}{{ char.hit_die }}</span>
+                </div>
+            </div>
+            <div class="panel panel-death-saves">
+                <div class="panel-header">
+                    <h3 class="panel-title-sm">Death Saves</h3>
+                </div>
+                <div class="death-saves-row">
+                    <div class="death-save-group">
+                        <span class="death-label success">✓</span>
+                        {% for i in range(3) %}
+                        <input type="checkbox" class="death-check success"
+                               {% if i < char.death_saves.successes %}checked{% endif %}
+                               onchange="updateDeathSaves()">
+                        {% endfor %}
+                    </div>
+                    <div class="death-save-group">
+                        <span class="death-label failure">✗</span>
+                        {% for i in range(3) %}
+                        <input type="checkbox" class="death-check failure"
+                               {% if i < char.death_saves.failures %}checked{% endif %}
+                               onchange="updateDeathSaves()">
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if char.class == 'Bard' %}
+        <!-- Bardic Inspiration -->
+        <div class="panel panel-inspiration">
+            <div class="panel-header">
+                <h2 class="panel-title">Bardic Inspiration ({{ char.bardic_inspiration_die }})</h2>
+            </div>
+            <div class="inspiration-pips">
+                {% for i in range(char.bardic_inspiration_max) %}
+                <div class="inspiration-pip {% if i < char.bardic_inspiration_remaining %}available{% else %}used{% endif %}"
+                     onclick="useInspiration()">
+                    ♪
+                </div>
+                {% endfor %}
+            </div>
+            <div class="inspiration-count">
+                <span id="inspiration-remaining">{{ char.bardic_inspiration_remaining }}</span> / {{ char.bardic_inspiration_max }}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Attacks -->
+        <div class="panel panel-attacks">
+            <div class="panel-header">
+                <h2 class="panel-title">Attacks</h2>
+                <button class="btn btn-sm btn-gold" onclick="showAddAttackForm()">+ Add</button>
+            </div>
+            <div class="attacks-list" id="attacks-list">
+                {% for atk in char.attacks %}
+                <div class="attack-row" data-attack-index="{{ loop.index0 }}">
+                    <div class="attack-row-main">
+                        <span class="attack-name">{{ atk.name }}</span>
+                        <span class="attack-to-hit">{{ atk.to_hit|modifier_str }}</span>
+                        <span class="attack-damage">{{ atk.damage_dice }}</span>
+                        <span class="attack-type">{{ atk.damage_type }}</span>
+                        <div class="attack-row-actions">
+                            <button class="btn btn-sm btn-edit" onclick="editAttack({{ loop.index0 }})">✎</button>
+                            <button class="btn btn-sm btn-danger" onclick="deleteAttack({{ loop.index0 }})">×</button>
+                        </div>
+                    </div>
+                    <div class="attack-row-detail">
+                        {{ atk.ability|upper }}
+                        {% if atk.proficient %} + Prof{% endif %}
+                        {% if atk.bonus %} + {{ atk.bonus }}{% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+                {% if not char.attacks|length %}
+                <div class="attacks-empty" id="attacks-empty">No attacks configured</div>
+                {% endif %}
+            </div>
+
+            <!-- Add/Edit Attack Form (hidden) -->
+            <div class="attack-form hidden" id="attack-form">
+                <div class="form-row">
+                    <label>Name</label>
+                    <input type="text" id="atk-name" class="input-field" placeholder="e.g. Rapier, Eldritch Blast">
+                </div>
+                <div class="form-row-group">
+                    <div class="form-row">
+                        <label>Ability</label>
+                        <select id="atk-ability" class="input-field">
+                            {% for ab_key, ab_label in ability_labels|items %}
+                            <option value="{{ ab_key }}">{{ ab_label }} ({{ char.ability_modifiers[ab_key]|modifier_str }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label>Extra Bonus</label>
+                        <input type="number" id="atk-bonus" class="input-field" value="0" placeholder="0">
+                    </div>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="atk-proficient" checked>
+                        Add proficiency bonus (+{{ char.proficiency_bonus }})
+                    </label>
+                </div>
+                <div class="form-row-group">
+                    <div class="form-row">
+                        <label>Damage Dice</label>
+                        <input type="text" id="atk-damage-dice" class="input-field" placeholder="e.g. 1d8+3">
+                    </div>
+                    <div class="form-row">
+                        <label>Damage Type</label>
+                        <select id="atk-damage-type" class="input-field">
+                            <option value="Bludgeoning">Bludgeoning</option>
+                            <option value="Piercing">Piercing</option>
+                            <option value="Slashing">Slashing</option>
+                            <option value="Acid">Acid</option>
+                            <option value="Cold">Cold</option>
+                            <option value="Fire">Fire</option>
+                            <option value="Force">Force</option>
+                            <option value="Lightning">Lightning</option>
+                            <option value="Necrotic">Necrotic</option>
+                            <option value="Poison">Poison</option>
+                            <option value="Psychic">Psychic</option>
+                            <option value="Radiant">Radiant</option>
+                            <option value="Thunder">Thunder</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="display:flex; gap:0.35rem; margin-top:0.5rem;">
+                    <button class="btn btn-gold" onclick="saveAttack()">Save</button>
+                    <button class="btn" onclick="cancelAttackForm()">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Skills -->
+        <div class="panel panel-skills">
+            <div class="panel-header">
+                <h2 class="panel-title">Skills</h2>
+                <button class="btn btn-sm btn-edit" onclick="toggleEditPanel('skills')">Edit</button>
+            </div>
+            <div class="skills-list" id="skills-display">
+                {% for skill_name, skill_data in char.skills|dictsort %}
+                <div class="skill-row {% if skill_data.expertise %}expertise{% elif skill_data.proficient %}proficient{% endif %}">
+                    <span class="skill-pip {% if skill_data.expertise %}double{% elif skill_data.proficient %}filled{% endif %}">
+                        {% if skill_data.expertise %}◆{% elif skill_data.proficient %}●{% else %}○{% endif %}
+                    </span>
+                    <span class="skill-bonus">{{ skill_data.bonus|modifier_str }}</span>
+                    <span class="skill-name">{{ skill_name }}</span>
+                    <span class="skill-ability">({{ skill_data.ability|upper }})</span>
+                    {% if skill_data.temp_bonus %}
+                    <span class="skill-temp-badge" title="Temporary bonus">+{{ skill_data.temp_bonus }}</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <div class="skills-edit hidden" id="skills-edit">
+                <p class="edit-hint">Set proficiency (●) and expertise (◆) for each skill. Temp bonuses are for buffs/conditions.</p>
+                {% for skill_name in all_skills|keys|sort %}
+                <div class="skill-edit-row">
+                    <span class="skill-edit-name">{{ skill_name }}</span>
+                    <select class="skill-prof-select" data-skill="{{ skill_name }}" id="prof-{{ skill_name|replace(' ', '-') }}">
+                        <option value="none" {% if skill_name not in char.proficiencies and skill_name not in char.expertise %}selected{% endif %}>—</option>
+                        <option value="proficient" {% if skill_name in char.proficiencies and skill_name not in char.expertise %}selected{% endif %}>● Prof</option>
+                        <option value="expertise" {% if skill_name in char.expertise %}selected{% endif %}>◆ Expert</option>
+                    </select>
+                    <input type="number" class="input-field input-xs" value="{{ (char.temp_skill_bonuses[skill_name] if skill_name in char.temp_skill_bonuses else 0) }}"
+                           data-skill-temp="{{ skill_name }}" placeholder="Tmp" min="-10" max="10">
+                </div>
+                {% endfor %}
+                <button class="btn btn-gold" onclick="saveSkills()">Save Skills</button>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- RIGHT COLUMN: Features + Languages + Notes                   -->
+    <!-- ============================================================ -->
+    <section class="sheet-column col-right">
+
+        {% if char.spellcasting_ability %}
+        <!-- Spell Slots Quick View -->
+        <div class="panel panel-slots">
+            <div class="panel-header">
+                <h2 class="panel-title">Spell Slots</h2>
+            </div>
+            {% if char.spell_slots|length %}
+            <div class="slots-grid">
+                {% for level, slot in char.spell_slots|dictsort %}
+                <div class="slot-group" data-slot-level="{{ level }}">
+                    <div class="slot-level">{{ level|ordinal }}</div>
+                    <div class="slot-pips">
+                        {% for i in range(slot.max) %}
+                        <div class="slot-pip {% if i < slot.remaining %}available{% else %}used{% endif %}"
+                             title="Click to use slot" onclick="useSlotPip({{ level }}, this)">
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="slot-count">{{ slot.remaining }}/{{ slot.max }}</div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-text">No spell slots at this level.</p>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Active Effects -->
+        <div class="panel panel-effects">
+            <div class="panel-header">
+                <h2 class="panel-title">Active Effects</h2>
+            </div>
+            {% if char.active_effects|length %}
+            <div class="features-list">
+                {% for effect in char.active_effects %}
+                <div class="feature-item">
+                    <span class="feature-level">{{ effect.source_type|title }}</span>
+                    <span class="feature-name">
+                        {{ effect.source }}: {{ effect.label }}
+                        {% if effect.mode == 'dice' %}+{{ effect.value }}{% elif effect.value|int >= 0 %}+{{ effect.value }}{% else %}{{ effect.value }}{% endif %}
+                    </span>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-text">No item or condition effects are currently active.</p>
+            {% endif %}
+        </div>
+
+        <!-- Conditions -->
+        <div class="panel panel-conditions">
+            <div class="panel-header">
+                <h2 class="panel-title">Conditions</h2>
+            </div>
+
+            {% if conditions|length %}
+            <div class="features-list">
+                {% for condition in conditions %}
+                <div class="feature-item">
+                    <span class="feature-level">{% if condition.active %}On{% else %}Off{% endif %}</span>
+                    <span class="feature-name">
+                        {{ condition.name }}
+                        {% if condition.effects|length %}
+                        <span class="edit-hint">
+                            {% for effect in condition.effects %}
+                            {{ (effect_target_labels[effect.target] or effect.target) }}
+                            {% if effect.mode == 'dice' %}+{{ effect.value }}{% elif effect.value|int >= 0 %}+{{ effect.value }}{% else %}{{ effect.value }}{% endif %}{% if not loop.last %}; {% endif %}
+                            {% endfor %}
+                        </span>
+                        {% endif %}
+                    </span>
+                    <div style="display:flex; gap:0.25rem; margin-left:auto;">
+                        <button class="btn btn-sm" onclick="toggleCondition('{{ condition.id }}', {{ 'false' if condition.active else 'true' }})">
+                            {% if condition.active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteCondition('{{ condition.id }}', {{ condition.name|tojson }})">×</button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="empty-text">No conditions recorded.</p>
+            {% endif %}
+
+            <div class="form-row" style="margin-top:0.75rem;">
+                <label>New Condition</label>
+                <input type="text" id="new-condition-name" class="input-field" placeholder="e.g. Bless, Frightened, Haste">
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea id="new-condition-desc" class="input-field textarea-field" rows="2" placeholder="Optional note..."></textarea>
+            </div>
+            <div class="form-row">
+                <label>Effects JSON</label>
+                <textarea id="new-condition-effects" class="input-field textarea-field" rows="5"
+                          placeholder='[{"target":"saving_throws","mode":"dice","value":"1d4"}]'></textarea>
+            </div>
+            <div class="form-row">
+                <label class="checkbox-label">
+                    <input type="checkbox" id="new-condition-active" checked> Active
+                </label>
+            </div>
+            <button class="btn btn-gold" onclick="saveNewCondition()">Add Condition</button>
+        </div>
+
+        {% if char.features|length %}
+        <!-- Features -->
+        <div class="panel panel-features">
+            <div class="panel-header">
+                <h2 class="panel-title">Features &amp; Traits</h2>
+            </div>
+            <div class="features-list">
+                {% for feat in char.features %}
+                <div class="feature-item">
+                    <span class="feature-level">Lv{{ feat.level }}</span>
+                    <span class="feature-name">{{ feat.name }}</span>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Languages & Tool Proficiencies -->
+        <div class="panel panel-languages">
+            <div class="panel-header">
+                <h2 class="panel-title">Languages &amp; Tools</h2>
+                <button class="btn btn-sm btn-edit" onclick="toggleEditPanel('languages')">Edit</button>
+            </div>
+            <div id="languages-display">
+                <div class="tag-list">
+                    {% for lang in char.languages %}
+                    <span class="tag">{{ lang }}</span>
+                    {% endfor %}
+                    {% for tool in char.tool_proficiencies %}
+                    <span class="tag tag-tool">{{ tool }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="hidden" id="languages-edit">
+                <div class="form-row">
+                    <label>Languages (comma-separated)</label>
+                    <input type="text" id="edit-languages" value="{{ char.languages|join(', ') }}" class="input-field">
+                </div>
+                <div class="form-row">
+                    <label>Tool Proficiencies (comma-separated)</label>
+                    <input type="text" id="edit-tools" value="{{ char.tool_proficiencies|join(', ') }}" class="input-field">
+                </div>
+                <button class="btn btn-gold" onclick="saveLanguages()">Save</button>
+            </div>
+        </div>
+
+        <!-- Notes -->
+        <div class="panel panel-notes">
+            <div class="panel-header">
+                <h2 class="panel-title">Notes</h2>
+            </div>
+            <textarea id="char-notes" class="notes-textarea" placeholder="Jot down notes..."
+                      onchange="saveNotes()">{{ char.notes }}</textarea>
+        </div>
+
+        <!-- Armor Config -->
+        <div class="panel panel-armor">
+            <div class="panel-header">
+                <h2 class="panel-title">Armor &amp; Defense</h2>
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Armor Bonus</label>
+                    <input type="number" id="edit-armor-bonus" value="{{ char.armor_bonus }}" class="input-field input-narrow"
+                           onchange="saveArmor()" min="0" max="30">
+                </div>
+                <div class="form-row">
+                    <label>Shield</label>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="edit-shield" {% if char.has_shield %}checked{% endif %}
+                               onchange="saveArmor()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label>Speed</label>
+                    <input type="number" id="edit-speed" value="{{ char.speed }}" class="input-field input-narrow"
+                           data-effect-bonus="{{ char.speed - char.base_speed }}"
+                           onchange="saveArmor()" min="0" max="120" step="5">
+                    {% if char.speed != char.base_speed %}
+                    <p class="edit-hint">Base speed {{ char.base_speed }}ft; active effects add {{ char.speed - char.base_speed }}ft.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </section>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if char %}
+<script>
+// Character-specific JS
+const CHAR_ID = "{{ char.id }}";
+</script>
+{% endif %}
+{% endblock %}

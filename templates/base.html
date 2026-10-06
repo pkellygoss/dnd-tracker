@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}D&amp;D Character Sheet{% endblock %}</title>
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icons/favicon.ico">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32x32.png">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <meta name="theme-color" content="#1a0d0d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="D&amp;D Tracker">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/fonts.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <!-- Parchment grain overlay -->
+    <div class="grain-overlay"></div>
+
+    <nav class="main-nav">
+        <div class="nav-brand" onclick="toggleCharacterSwitcher()" title="Switch character">
+            <span class="nav-icon">⚔</span>
+            {% if char %}
+            <span class="nav-title">{{ char.name }}</span>
+            <span class="nav-subtitle">Lvl {{ char.level }} {{ char.subclass }} {{ char.class }}</span>
+            {% else %}
+            <span class="nav-title">D&amp;D Tracker</span>
+            <span class="nav-subtitle">No character selected</span>
+            {% endif %}
+            <span class="nav-switch-hint">▾</span>
+        </div>
+        <div class="nav-links">
+            <a href="{{ url_for('character_sheet') }}" class="nav-link {% if active_page == 'character' %}active{% endif %}">
+                <span class="nav-link-icon">📜</span> Character
+            </a>
+            <a href="{{ url_for('party_page') }}" class="nav-link {% if active_page == 'party' %}active{% endif %}">
+                <span class="nav-link-icon">🛡</span> Party
+            </a>
+            <a href="{{ url_for('spells_page') }}" class="nav-link {% if active_page == 'spells' %}active{% endif %}">
+                <span class="nav-link-icon">✨</span> Spells
+            </a>
+            <a href="{{ url_for('abilities_page') }}" class="nav-link {% if active_page == 'abilities' %}active{% endif %}">
+                <span class="nav-link-icon">⚡</span> Abilities
+            </a>
+            <a href="{{ url_for('inventory_page') }}" class="nav-link {% if active_page == 'inventory' %}active{% endif %}">
+                <span class="nav-link-icon">🎒</span> Inventory
+            </a>
+            <a href="{{ url_for('journal_page') }}" class="nav-link {% if active_page == 'journal' %}active{% endif %}">
+                <span class="nav-link-icon">📖</span> Journal
+            </a>
+            <a href="{{ url_for('world_page') }}" class="nav-link {% if active_page == 'world' %}active{% endif %}">
+                <span class="nav-link-icon">🌍</span> World
+            </a>
+            <!-- pwa -->
+            <a href="{{ url_for('generate_page') }}" class="nav-link {% if active_page == 'generate' %}active{% endif %}">
+                <span class="nav-link-icon">🎨</span> Images
+            </a>
+            <a href="{{ url_for('settings_page') }}" class="nav-link {% if active_page == 'settings' %}active{% endif %}">
+                <span class="nav-link-icon">⚙</span> Settings
+            </a>
+            <!-- /pwa -->
+        </div>
+        <div class="nav-actions">
+            <button class="btn btn-rest btn-short-rest" onclick="shortRest()" title="Short Rest">
+                🌤 Short Rest
+            </button>
+            <button class="btn btn-rest btn-long-rest" onclick="longRest()" title="Long Rest">
+                🌙 Long Rest
+            </button>
+            <button class="btn" onclick="showDataModal()" title="Backup, restore and storage">
+                💾 Data
+            </button>
+        </div>
+    </nav>
+
+    <!-- Character Switcher Dropdown -->
+    <div class="char-switcher hidden" id="char-switcher">
+        <div class="char-switcher-header">
+            <h3>Characters</h3>
+            <button class="btn btn-sm btn-gold" onclick="showNewCharModal()">+ New</button>
+        </div>
+        <div class="char-switcher-list">
+            {% for c in all_characters %}
+            <div class="char-switcher-item {% if char and c.id == char.id %}active{% endif %}"
+                 onclick="switchCharacter('{{ c.id }}')">
+                <span class="char-switcher-name">{{ c.name }}</span>
+                <span class="char-switcher-detail">Lvl {{ c.level }} {{ c.subclass }} {{ c.character_class }}</span>
+            </div>
+            {% endfor %}
+            {% if not all_characters|length %}
+            <div class="char-switcher-empty">No characters yet — create one!</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- New Character Modal -->
+    <div class="modal-overlay hidden" id="new-char-modal">
+        <div class="modal-content">
+            <h2>New Character</h2>
+            <div class="form-row">
+                <label>Name</label>
+                <input type="text" id="new-char-name" class="input-field" placeholder="Character name" autofocus>
+            </div>
+            <div class="form-row">
+                <label>Class</label>
+                <select id="new-char-class" class="input-field" onchange="updateSubclassOptions()">
+                    {% for cls in class_list %}
+                    <option value="{{ cls }}">{{ cls }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-row">
+                <label>Subclass</label>
+                <select id="new-char-subclass" class="input-field">
+                    <option value="">— Choose later —</option>
+                </select>
+            </div>
+            <div style="display:flex; gap:0.5rem; margin-top:0.75rem;">
+                <button class="btn btn-gold" onclick="createCharacter()">Create</button>
+                <button class="btn" onclick="hideNewCharModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <main class="main-content">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% include "data_modal.html" %}
+
+    <!-- Toast notifications -->
+    <div id="toast-container"></div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    <script>
+    // Scroll nav so active page is centred
+    (function() {
+        const active = document.querySelector('.nav-link.active');
+        if (active) {
+            const nav = document.querySelector('.main-nav');
+            const offset = active.offsetLeft - nav.offsetLeft - (nav.clientWidth / 2) + (active.offsetWidth / 2);
+            nav.scrollLeft = offset;
+        }
+    })();
+
+    // Subclass options for new character creation
+    const SUBCLASS_OPTIONS = {{ subclass_options|default({})|tojson }};
+
+    function toggleCharacterSwitcher() {
+        document.getElementById('char-switcher').classList.toggle('hidden');
+    }
+
+    async function switchCharacter(charId) {
+        const result = await api('/api/character/switch', { id: charId });
+        if (result?.ok) {
+            location.reload();
+        }
+    }
+
+    function showNewCharModal() {
+        document.getElementById('char-switcher').classList.add('hidden');
+        document.getElementById('new-char-modal').classList.remove('hidden');
+        updateSubclassOptions();
+        document.getElementById('new-char-name').focus();
+    }
+
+    function hideNewCharModal() {
+        document.getElementById('new-char-modal').classList.add('hidden');
+    }
+
+    function updateSubclassOptions() {
+        const cls = document.getElementById('new-char-class').value;
+        const sel = document.getElementById('new-char-subclass');
+        const subs = SUBCLASS_OPTIONS[cls] || [];
+        sel.innerHTML = '<option value="">— Choose later —</option>';
+        subs.forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s;
+            opt.textContent = s;
+            sel.appendChild(opt);
+        });
+    }
+
+    async function createCharacter() {
+        const name = document.getElementById('new-char-name').value.trim();
+        if (!name) { showToast('Name is required', 'error'); return; }
+        const data = {
+            name,
+            character_class: document.getElementById('new-char-class').value,
+            subclass: document.getElementById('new-char-subclass').value,
+        };
+        const result = await api('/api/character/new', data);
+        if (result?.ok) {
+            showToast(`${name} created!`, 'success');
+            setTimeout(() => location.reload(), 300);
+        }
+    }
+
+    // Close switcher on outside click
+    document.addEventListener('click', (e) => {
+        const switcher = document.getElementById('char-switcher');
+        const brand = document.querySelector('.nav-brand');
+        if (switcher && !switcher.contains(e.target) && !brand.contains(e.target)) {
+            switcher.classList.add('hidden');
+        }
+    });
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "name": "dnd-tracker-pwa",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "parity": "node tests/parity.mjs && node tests/actions-parity.mjs 150 && node tests/render-parity.mjs 60",
+    "smoke": "node tests/browser-smoke.mjs",
+    "build": "node tools/build.mjs",
+    "migrate": "node tools/firestore-to-backup.mjs",
+    "serve": "node tools/serve.mjs"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "fflate": "^0.8.2",
+    "nunjucks": "^3.2.4",
+    "puppeteer-core": "^25.12.0"
+  }
+}

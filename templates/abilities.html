@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name }} — Abilities{% endblock %}
+
+{% block content %}
+<div class="spells-page">
+
+    <!-- Toolbar -->
+    <div class="spells-toolbar">
+        <h1 class="page-title">Abilities</h1>
+        <div style="display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap;">
+            <button class="btn btn-gold" onclick="showAddAbilityModal()">+ Add Ability</button>
+            <div class="spell-filter-bar">
+                <button class="btn btn-sm spell-filter active" data-recharge="all" onclick="filterAbilities('all', this)">All</button>
+                <button class="btn btn-sm spell-filter" data-recharge="at_will" onclick="filterAbilities('at_will', this)">At Will</button>
+                <button class="btn btn-sm spell-filter" data-recharge="per_short_rest" onclick="filterAbilities('per_short_rest', this)">Short Rest</button>
+                <button class="btn btn-sm spell-filter" data-recharge="per_long_rest" onclick="filterAbilities('per_long_rest', this)">Long Rest</button>
+                <button class="btn btn-sm spell-filter" data-recharge="per_day" onclick="filterAbilities('per_day', this)">Per Day</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ability Cards Grid -->
+    <div class="spell-cards-grid" id="ability-cards-grid">
+        {% for ability in abilities %}
+        <div class="spell-card-wrapper" data-ability-recharge="{{ ability.recharge }}" data-ability-id="{{ ability.id }}">
+            <div class="spell-card" onclick="flipCard(this)">
+                <!-- FRONT: Image -->
+                <div class="spell-card-face spell-card-front">
+                    {% if ability.image %}
+                    <img src="{{ ability.image|image_url('abilities') }}" alt="{{ ability.name }}" class="spell-card-img">
+                    {% else %}
+                    <div class="spell-card-placeholder">
+                        <span class="spell-card-placeholder-icon">⚡</span>
+                    </div>
+                    {% endif %}
+                    <div class="spell-card-name-bar">
+                        <span class="spell-card-name">{{ ability.name }}</span>
+                        {% if ability.recharge != 'at_will' %}
+                        <span class="ability-uses-badge {% if ability.uses_remaining == 0 %}depleted{% endif %}">
+                            {{ ability.uses_remaining }}/{{ ability.max_uses }}
+                        </span>
+                        {% else %}
+                        <span class="ability-uses-badge at-will">∞</span>
+                        {% endif %}
+                    </div>
+                    <!-- Recharge type badge -->
+                    <div class="ability-recharge-badge recharge-{{ ability.recharge }}">
+                        {% if ability.recharge == 'at_will' %}∞
+                        {% elif ability.recharge == 'per_short_rest' %}SR
+                        {% elif ability.recharge == 'per_long_rest' %}LR
+                        {% elif ability.recharge == 'per_day' %}Day
+                        {% endif %}
+                    </div>
+                    {% if ability.source %}
+                    <div class="ability-source-badge">{{ ability.source }}</div>
+                    {% endif %}
+                </div>
+
+                <!-- BACK: Details -->
+                <div class="spell-card-face spell-card-back">
+                    <div class="spell-back-header">
+                        <h3 class="spell-back-name">{{ ability.name }}</h3>
+                        <span class="spell-back-level">
+                            {% if ability.source %}{{ ability.source }} · {% endif %}
+                            {% if ability.recharge == 'at_will' %}At Will
+                            {% elif ability.recharge == 'per_short_rest' %}{{ ability.max_uses }}/Short Rest
+                            {% elif ability.recharge == 'per_long_rest' %}{{ ability.max_uses }}/Long Rest
+                            {% elif ability.recharge == 'per_day' %}{{ ability.max_uses }}/Day
+                            {% endif %}
+                        </span>
+                    </div>
+                    <div class="spell-back-body">
+                        <div class="spell-back-desc">
+                            {{ ability.description }}
+                        </div>
+                    </div>
+                    <div class="spell-back-actions" onclick="event.stopPropagation()">
+                        {% if ability.recharge == 'at_will' %}
+                        <button class="btn btn-cast btn-cantrip" onclick="useAbility('{{ ability.id }}', '{{ ability.name }}')">
+                            ⚡ Use
+                        </button>
+                        {% else %}
+                        <div class="ability-uses-display">
+                            <span class="ability-uses-label">Uses:</span>
+                            <div class="ability-use-pips">
+                                {% for i in range(ability.max_uses) %}
+                                <div class="slot-pip {% if i < ability.uses_remaining %}available{% else %}used{% endif %}"
+                                     title="{% if i < ability.uses_remaining %}Click to use{% else %}Depleted{% endif %}"
+                                     onclick="event.stopPropagation(); {% if i < ability.uses_remaining %}useAbility('{{ ability.id }}', '{{ ability.name }}'){% endif %}">
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <span class="ability-uses-count" id="ability-count-{{ ability.id }}">
+                                {{ ability.uses_remaining }}/{{ ability.max_uses }}
+                            </span>
+                        </div>
+                        <button class="btn btn-cast" onclick="useAbility('{{ ability.id }}', '{{ ability.name }}')">
+                            ⚡ Use
+                        </button>
+                        <button class="btn btn-sm" onclick="restoreAbility('{{ ability.id }}', '{{ ability.name }}')" style="margin-top:0.15rem;">
+                            ↺ Restore
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-sm btn-danger" onclick="deleteAbility('{{ ability.id }}', '{{ ability.name }}')">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not abilities|length %}
+        <div class="empty-spells">
+            <span class="empty-icon">⚡</span>
+            <p>No abilities yet. Add Bardic Inspiration, Cutting Words, item abilities, and more!</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add Ability Modal -->
+<div class="modal-overlay hidden" id="add-ability-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Add Ability</h2>
+            <button class="modal-close" onclick="hideAddAbilityModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label>Ability Name</label>
+                <input type="text" id="new-ability-name" class="input-field" placeholder="e.g. Cutting Words">
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Recharge</label>
+                    <select id="new-ability-recharge" class="input-field" onchange="toggleUsesField()">
+                        <option value="at_will">At Will</option>
+                        <option value="per_short_rest">Per Short Rest</option>
+                        <option value="per_long_rest" selected>Per Long Rest</option>
+                        <option value="per_day">Per Day</option>
+                    </select>
+                </div>
+                <div class="form-row" id="uses-field-wrap">
+                    <label>Max Uses</label>
+                    <input type="number" id="new-ability-uses" class="input-field input-narrow" value="1" min="1" max="20">
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Source</label>
+                <select id="new-ability-source" class="input-field">
+                    <option value="">—</option>
+                    <option value="Class">Class</option>
+                    <option value="Subclass">Subclass</option>
+                    <option value="Feat">Feat</option>
+                    <option value="Item">Item</option>
+                    <option value="Race">Race</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label>Image</label>
+                <div class="image-input-group">
+                    <input type="text" id="new-ability-image" class="input-field" placeholder="filename, URL, or upload →">
+                    <button type="button" class="btn btn-upload" onclick="uploadImage('abilities', 'new-ability-image')">📷 Upload</button>
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea id="new-ability-desc" class="input-field textarea-field" rows="5" placeholder="What does this ability do?"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="hideAddAbilityModal()">Cancel</button>
+            <button class="btn btn-gold" onclick="saveNewAbility()">Add Ability</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHAR_ID = "{{ char.id }}";
+
+// --- Modal ---
+function showAddAbilityModal() {
+    document.getElementById('add-ability-modal')?.classList.remove('hidden');
+    toggleUsesField();
+}
+function hideAddAbilityModal() {
+    document.getElementById('add-ability-modal')?.classList.add('hidden');
+}
+function toggleUsesField() {
+    const recharge = document.getElementById('new-ability-recharge')?.value;
+    const wrap = document.getElementById('uses-field-wrap');
+    if (wrap) wrap.style.display = (recharge === 'at_will') ? 'none' : '';
+}
+
+// --- Filter ---
+function filterAbilities(recharge, btn) {
+    document.querySelectorAll('.spell-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.spell-card-wrapper').forEach(wrapper => {
+        if (recharge === 'all') {
+            wrapper.style.display = '';
+        } else {
+            wrapper.style.display = (wrapper.dataset.abilityRecharge === recharge) ? '' : 'none';
+        }
+    });
+}
+
+// --- Use / Restore ---
+async function useAbility(abilityId, name) {
+    const result = await api(`/api/ability/${abilityId}/use`);
+    if (result?.ok) {
+        showToast(result.message, 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+}
+
+async function restoreAbility(abilityId, name) {
+    const result = await api(`/api/ability/${abilityId}/restore`);
+    if (result?.ok) {
+        showToast(`${name} restored`, 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+}
+
+// --- CRUD ---
+async function saveNewAbility() {
+    const recharge = document.getElementById('new-ability-recharge')?.value || 'per_long_rest';
+    const data = {
+        name: document.getElementById('new-ability-name')?.value || '',
+        recharge: recharge,
+        max_uses: recharge === 'at_will' ? 0 : (parseInt(document.getElementById('new-ability-uses')?.value) || 1),
+        source: document.getElementById('new-ability-source')?.value || '',
+        image: document.getElementById('new-ability-image')?.value || '',
+        description: document.getElementById('new-ability-desc')?.value || '',
+    };
+    if (!data.name) { showToast('Name is required', 'error'); return; }
+    const result = await api('/api/ability/add', data);
+    if (result?.ok) {
+        showToast(`${data.name} added`, 'success');
+        hideAddAbilityModal();
+        setTimeout(() => location.reload(), 300);
+    }
+}
+
+async function deleteAbility(abilityId, name) {
+    if (!confirm(`Remove ${name}?`)) return;
+    const result = await api(`/api/ability/${abilityId}/delete`);
+    if (result?.ok) {
+        showToast(`${name} removed`, 'info');
+        const wrapper = document.querySelector(`[data-ability-id="${abilityId}"]`);
+        if (wrapper) {
+            wrapper.style.transition = 'opacity 0.3s, transform 0.3s';
+            wrapper.style.opacity = '0';
+            wrapper.style.transform = 'scale(0.9)';
+            setTimeout(() => wrapper.remove(), 300);
+        }
+    }
+}
+</script>
+{% endblock %}

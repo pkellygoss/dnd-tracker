@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Settings — D&amp;D Tracker{% endblock %}
+{% block content %}
+<div class="settings-page" style="max-width:44rem; margin:0 auto; padding:1rem 1.5rem; display:flex; flex-direction:column; gap:1rem;">
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Image generation (Azure OpenAI)</h2>
+        </div>
+        <p style="margin:0 0 0.75rem; color:var(--text-secondary);">
+            Used by the image generator. The key is stored on this device only and is
+            <strong>never included in backups</strong>, so you'll need to enter it again on a new device.
+        </p>
+
+        <div class="form-row">
+            <label for="set-api-key">API key</label>
+            <div style="display:flex; gap:0.5rem; align-items:center;">
+                <input type="password" id="set-api-key" class="input-field" autocomplete="off" autocapitalize="off" spellcheck="false"
+                       placeholder="{{ 'Saved (' ~ settings.api_key_hint ~ ') — paste a new one to replace' if settings.has_api_key else 'Paste your key' }}">
+                <button class="btn btn-sm" type="button" onclick="toggleKeyVisibility()" id="set-api-key-toggle">Show</button>
+            </div>
+            <div style="margin-top:0.25rem; font-size:0.85rem; color:var(--text-secondary);" id="set-key-status">
+                {% if settings.has_api_key %}A key ending in <strong>{{ settings.api_key_hint }}</strong> is saved.{% else %}No key saved.{% endif %}
+            </div>
+        </div>
+        <div style="display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:1rem;">
+            <button class="btn btn-gold" onclick="saveApiKey()">Save key</button>
+            {% if settings.has_api_key %}<button class="btn btn-danger" onclick="clearApiKey()">Remove key</button>{% endif %}
+        </div>
+
+        <details>
+            <summary style="cursor:pointer; margin-bottom:0.5rem;">Endpoint details</summary>
+            <div class="form-row">
+                <label for="set-endpoint">Endpoint</label>
+                <input type="url" id="set-endpoint" class="input-field" value="{{ settings.azure_endpoint }}" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label for="set-deployment">Deployment</label>
+                    <input type="text" id="set-deployment" class="input-field" value="{{ settings.azure_deployment }}" autocapitalize="off" spellcheck="false">
+                </div>
+                <div class="form-row">
+                    <label for="set-api-version">API version</label>
+                    <input type="text" id="set-api-version" class="input-field" value="{{ settings.azure_api_version }}" autocapitalize="off" spellcheck="false">
+                </div>
+            </div>
+            <div style="display:flex; gap:0.5rem;">
+                <button class="btn btn-gold" onclick="saveEndpointSettings()">Save endpoint details</button>
+                <button class="btn" onclick="resetEndpointSettings()">Reset to defaults</button>
+            </div>
+        </details>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <h2 class="panel-title">Data</h2>
+        </div>
+        <p style="margin:0 0 0.75rem; color:var(--text-secondary);">Back up or restore everything on this device.</p>
+        <button class="btn" onclick="showDataModal()">💾 Backup &amp; restore…</button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleKeyVisibility() {
+    const input = document.getElementById('set-api-key');
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    document.getElementById('set-api-key-toggle').textContent = show ? 'Hide' : 'Show';
+}
+
+async function saveApiKey() {
+    const key = document.getElementById('set-api-key').value.trim();
+    const result = await api('/api/settings/key', { key });
+    if (result?.ok) {
+        showToast('API key saved', 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+}
+
+async function clearApiKey() {
+    if (!confirm('Remove the saved API key from this device?')) return;
+    const result = await api('/api/settings/key/delete');
+    if (result?.ok) {
+        showToast('API key removed', 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+}
+
+async function saveEndpointSettings() {
+    const result = await api('/api/settings/update', {
+        azure_endpoint: document.getElementById('set-endpoint').value,
+        azure_deployment: document.getElementById('set-deployment').value,
+        azure_api_version: document.getElementById('set-api-version').value,
+    });
+    if (result?.ok) {
+        showToast('Endpoint details saved', 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+}
+
+async function resetEndpointSettings() {
+    const result = await api('/api/settings/update', { azure_endpoint: '', azure_deployment: '', azure_api_version: '' });
+    if (result?.ok) {
+        showToast('Reset to defaults', 'success');
+        setTimeout(() => location.reload(), 400);
+    }
+}
+</script>
+{% endblock %}

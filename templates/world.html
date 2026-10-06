@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name }} — World Notes{% endblock %}
+
+{% block content %}
+<div class="world-page">
+    <div class="world-header">
+        <h1 class="page-title">World Notes</h1>
+        <button class="btn btn-gold" onclick="showAddNoteModal()">+ Add Note</button>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="world-toolbar">
+        <div class="world-search">
+            <input type="text" id="world-search-input" class="input-field" placeholder="Search names, tags, text..."
+                   oninput="filterWorldNotes()">
+            <button class="world-search-clear" id="world-search-clear" onclick="clearSearch()" style="display:none">×</button>
+        </div>
+        <div class="spell-filter-bar">
+            <button class="btn btn-sm spell-filter active" data-cat="all" onclick="filterCategory('all', this)">All</button>
+            <button class="btn btn-sm spell-filter" data-cat="person" onclick="filterCategory('person', this)">👤 People</button>
+            <button class="btn btn-sm spell-filter" data-cat="place" onclick="filterCategory('place', this)">📍 Places</button>
+            <button class="btn btn-sm spell-filter" data-cat="faction" onclick="filterCategory('faction', this)">⚔ Factions</button>
+            <button class="btn btn-sm spell-filter" data-cat="thing" onclick="filterCategory('thing', this)">💎 Things</button>
+            <button class="btn btn-sm spell-filter" data-cat="event" onclick="filterCategory('event', this)">📅 Events</button>
+        </div>
+    </div>
+
+    
+<!-- Add Note Modal -->
+<div class="modal-overlay hidden" id="add-note-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Add World Note</h2>
+            <button class="modal-close" onclick="hideAddNoteModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label>Name</label>
+                <input type="text" id="new-note-name" class="input-field" placeholder="e.g. Elara Brightwood">
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Category</label>
+                    <select id="new-note-category" class="input-field">
+                        <option value="person">👤 Person</option>
+                        <option value="place">📍 Place</option>
+                        <option value="faction">⚔ Faction</option>
+                        <option value="thing">💎 Thing</option>
+                        <option value="event">📅 Event</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label>Tags (comma-separated)</label>
+                    <input type="text" id="new-note-tags" class="input-field" placeholder="e.g. ally, merchant">
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea id="new-note-desc" class="input-field textarea-field" rows="5"
+                          placeholder="What do you know about this?"></textarea>
+            </div>
+            <!-- pwa -->
+            <div class="form-row">
+                <label>Appearance</label>
+                <textarea id="new-note-appearance" class="input-field textarea-field" rows="3"
+                          placeholder="What they look like: face, hair, build, clothing, distinctive features... (used by the image generator)"></textarea>
+            </div>
+            <!-- /pwa -->
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="hideAddNoteModal()">Cancel</button>
+            <button class="btn btn-gold" onclick="createWorldNote()">Add Note</button>
+        </div>
+    </div>
+</div>
+
+    <!-- Notes List -->
+    <div class="world-notes-list" id="world-notes-list">
+        {% for note in notes %}
+        {% set first = note.name[0]|upper if note.name else '?' %}
+        {% set prev_note = notes[loop.index0 - 1] %}
+        {% set prev_first = '' if loop.first else (prev_note.name[0]|upper if prev_note.name else '?') %}
+        {% if first != prev_first %}
+        <div class="world-letter-divider" data-letter="{{ first }}">
+            <span class="letter-mark">{{ first }}</span>
+            <hr class="letter-line">
+        </div>
+        {% endif %}
+        <div class="world-note-item" data-note-id="{{ note.id }}" data-category="{{ note.category }}"
+             data-name="{{ note.name|lower }}"
+             data-tags="{{ note.tags|join(',')|lower if note.tags|length else '' }}"
+             data-desc="{{ note.description|lower if note.description else '' }}">
+            <div class="world-note-main" onclick="toggleNoteExpand(this)">
+                <span class="world-note-cat-icon">
+                    {% if note.category == 'person' %}👤
+                    {% elif note.category == 'place' %}📍
+                    {% elif note.category == 'faction' %}⚔
+                    {% elif note.category == 'thing' %}💎
+                    {% elif note.category == 'event' %}📅
+                    {% else %}📝{% endif %}
+                </span>
+                <span class="world-note-name">{{ note.name }}</span>
+                <span class="world-note-cat-label">{{ note.category }}</span>
+                {% if note.tags|length %}
+                <div class="world-note-tags" onclick="event.stopPropagation()">
+                    {% for tag in note.tags|head(3) %}
+                    <span class="journal-tag clickable-tag" onclick="filterByTag('{{ tag }}')">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <span class="world-note-chevron">▸</span>
+            </div>
+            <div class="world-note-expanded hidden">
+                <div class="world-note-desc" id="desc-display-{{ note.id }}">
+                    {% if note.description %}
+                    {{ note.description }}
+                    {% else %}
+                    <span class="empty-text">No description yet. Click Edit to add one.</span>
+                    {% endif %}
+                    <!-- pwa -->
+                    {% if note.appearance %}
+                    <div class="world-note-appearance" style="margin-top:0.6rem;"><strong>Appearance:</strong> <span style="white-space:pre-line;">{{ note.appearance }}</span></div>
+                    {% endif %}
+                    <!-- /pwa -->
+                </div>
+                <div class="world-note-edit hidden" id="note-edit-{{ note.id }}">
+                    <div class="form-row">
+                        <label>Name</label>
+                        <input type="text" class="input-field" id="edit-name-{{ note.id }}" value="{{ note.name }}">
+                    </div>
+                    <div class="form-row-group">
+                        <div class="form-row">
+                            <label>Category</label>
+                            <select class="input-field" id="edit-cat-{{ note.id }}">
+                                <option value="person" {% if note.category == 'person' %}selected{% endif %}>Person</option>
+                                <option value="place" {% if note.category == 'place' %}selected{% endif %}>Place</option>
+                                <option value="faction" {% if note.category == 'faction' %}selected{% endif %}>Faction</option>
+                                <option value="thing" {% if note.category == 'thing' %}selected{% endif %}>Thing</option>
+                                <option value="event" {% if note.category == 'event' %}selected{% endif %}>Event</option>
+                            </select>
+                        </div>
+                        <div class="form-row">
+                            <label>Tags (comma-separated)</label>
+                            <input type="text" class="input-field" id="edit-tags-{{ note.id }}"
+                                   value="{{ note.tags|join(', ') if note.tags|length else '' }}">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label>Description</label>
+                        <textarea class="input-field textarea-field" id="edit-desc-{{ note.id }}" rows="5">{{ note.description }}</textarea>
+                    </div>
+                    <!-- pwa -->
+                    <div class="form-row">
+                        <label>Appearance</label>
+                        <textarea class="input-field textarea-field" id="edit-appearance-{{ note.id }}" rows="3"
+                                  placeholder="What they look like: face, hair, build, clothing, distinctive features... (used by the image generator)">{{ note.appearance }}</textarea>
+                    </div>
+                    <!-- /pwa -->
+                    <div style="display:flex; gap:0.4rem;">
+                        <button class="btn btn-gold" onclick="saveNoteEdit('{{ note.id }}')">Save</button>
+                        <button class="btn" onclick="cancelNoteEdit('{{ note.id }}')">Cancel</button>
+                    </div>
+                </div>
+                <div class="world-note-actions" id="note-actions-{{ note.id }}">
+                    <button class="btn btn-sm btn-edit" onclick="startNoteEdit('{{ note.id }}')">Edit</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteWorldNote('{{ note.id }}', '{{ note.name }}')">Delete</button>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not notes|length %}
+        <div class="empty-spells">
+            <span class="empty-icon">🌍</span>
+            <p>No world notes yet. Track the people, places, and things you discover!</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHAR_ID = "{{ char.id }}";
+let activeCategory = 'all';
+
+// --- Modal ---
+function showAddNoteModal() {
+    document.getElementById('add-note-modal')?.classList.remove('hidden');
+}
+function hideAddNoteModal() {
+    document.getElementById('add-note-modal')?.classList.add('hidden');
+}
+
+// --- Create ---
+async function createWorldNote() {
+    const name = document.getElementById('new-note-name')?.value || '';
+    if (!name) { showToast('Name is required', 'error'); return; }
+
+    const tagsRaw = document.getElementById('new-note-tags')?.value || '';
+    const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+    const result = await api('/api/world/add', {
+        name,
+        category: document.getElementById('new-note-category')?.value || 'person',
+        description: document.getElementById('new-note-desc')?.value || '',
+        tags,
+        /* pwa */
+        appearance: document.getElementById('new-note-appearance')?.value || '',
+        /* /pwa */
+    });
+
+    if (result?.ok) {
+        showToast(`"${name}" added`, 'success');
+        hideAddNoteModal();
+        setTimeout(() => location.reload(), 300);
+    }
+}
+
+// --- Expand / Collapse ---
+function toggleNoteExpand(mainEl) {
+    const item = mainEl.closest('.world-note-item');
+    const expanded = item.querySelector('.world-note-expanded');
+    const chevron = item.querySelector('.world-note-chevron');
+    const isOpen = !expanded.classList.contains('hidden');
+
+    // Close all others
+    document.querySelectorAll('.world-note-expanded').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.world-note-chevron').forEach(el => { el.textContent = '▸'; el.classList.remove('open'); });
+
+    if (!isOpen) {
+        expanded.classList.remove('hidden');
+        chevron.textContent = '▾';
+        chevron.classList.add('open');
+    }
+}
+
+// --- Edit ---
+function startNoteEdit(noteId) {
+    document.getElementById(`desc-display-${noteId}`)?.classList.add('hidden');
+    document.getElementById(`note-actions-${noteId}`)?.classList.add('hidden');
+    document.getElementById(`note-edit-${noteId}`)?.classList.remove('hidden');
+}
+
+function cancelNoteEdit(noteId) {
+    document.getElementById(`note-edit-${noteId}`)?.classList.add('hidden');
+    document.getElementById(`desc-display-${noteId}`)?.classList.remove('hidden');
+    document.getElementById(`note-actions-${noteId}`)?.classList.remove('hidden');
+}
+
+async function saveNoteEdit(noteId) {
+    const tagsRaw = document.getElementById(`edit-tags-${noteId}`)?.value || '';
+    const tags = tagsRaw.split(',').map(t => t.trim()).filter(Boolean);
+
+    const data = {
+        name: document.getElementById(`edit-name-${noteId}`)?.value || '',
+        category: document.getElementById(`edit-cat-${noteId}`)?.value || 'person',
+        description: document.getElementById(`edit-desc-${noteId}`)?.value || '',
+        tags,
+        /* pwa */
+        appearance: document.getElementById(`edit-appearance-${noteId}`)?.value || '',
+        /* /pwa */
+    };
+
+    const result = await api(`/api/world/${noteId}/update`, data);
+    if (result?.ok) {
+        showToast('Note updated', 'success');
+        setTimeout(() => location.reload(), 300);
+    }
+}
+
+// --- Delete ---
+async function deleteWorldNote(noteId, name) {
+    if (!confirm(`Delete "${name}"?`)) return;
+    const result = await api(`/api/world/${noteId}/delete`);
+    if (result?.ok) {
+        showToast(`"${name}" deleted`, 'info');
+        const item = document.querySelector(`[data-note-id="${noteId}"]`);
+        if (item) {
+            item.style.transition = 'opacity 0.3s, transform 0.3s';
+            item.style.opacity = '0';
+            item.style.transform = 'translateX(-20px)';
+            setTimeout(() => item.remove(), 300);
+        }
+    }
+}
+
+// --- Filter by category ---
+function filterCategory(cat, btn) {
+    activeCategory = cat;
+    document.querySelectorAll('.spell-filter').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyFilters();
+}
+
+// --- Filter by tag (clicked) ---
+function filterByTag(tag) {
+    document.getElementById('world-search-input').value = tag;
+    applyFilters();
+}
+
+// --- Search filter ---
+function filterWorldNotes() {
+    applyFilters();
+}
+
+function applyFilters() {
+    const search = (document.getElementById('world-search-input')?.value || '').toLowerCase();
+
+    document.querySelectorAll('.world-note-item').forEach(item => {
+        const name = item.dataset.name || '';
+        const tags = item.dataset.tags || '';
+        const desc = item.dataset.desc || '';
+        const cat = item.dataset.category || '';
+        const catMatch = (activeCategory === 'all' || cat === activeCategory);
+        const searchMatch = !search || name.includes(search) || tags.includes(search) || desc.includes(search);
+        item.style.display = (catMatch && searchMatch) ? '' : 'none';
+    });
+
+    // Show/hide letter dividers based on visible items
+    document.querySelectorAll('.world-letter-divider').forEach(divider => {
+        const letter = divider.dataset.letter;
+        let hasVisible = false;
+        let sibling = divider.nextElementSibling;
+        while (sibling && !sibling.classList.contains('world-letter-divider')) {
+            if (sibling.classList.contains('world-note-item') && sibling.style.display !== 'none') {
+                hasVisible = true;
+                break;
+            }
+            sibling = sibling.nextElementSibling;
+        }
+        divider.style.display = hasVisible ? '' : 'none';
+    });
+
+    // Show clear button if searching
+    const clearBtn = document.getElementById('world-search-clear');
+    if (clearBtn) clearBtn.style.display = search ? '' : 'none';
+}
+
+function clearSearch() {
+    document.getElementById('world-search-input').value = '';
+    applyFilters();
+}
+
+/* pwa */
+// Open the note named in #/world?note=<id> (links from journal @-mentions and tags)
+function openNoteFromHash() {
+    const m = location.hash.match(/[?&]note=([^&]+)/);
+    if (!m) return;
+    const item = document.querySelector(`[data-note-id="${CSS.escape(decodeURIComponent(m[1]))}"]`);
+    if (!item) { showToast('That world note no longer exists', 'error'); return; }
+    if (item.querySelector('.world-note-expanded').classList.contains('hidden')) {
+        toggleNoteExpand(item.querySelector('.world-note-main'));
+    }
+    item.scrollIntoView({ block: 'center' });
+    item.classList.remove('note-flash');
+    void item.offsetWidth;
+    item.classList.add('note-flash');
+}
+window.addEventListener('hashchange', openNoteFromHash);
+openNoteFromHash();
+/* /pwa */
+</script>
+{% endblock %}

@@ -1,0 +1,258 @@
+{% extends "base.html" %}
+{% block title %}{{ char.name }} — Spellbook{% endblock %}
+
+{% block content %}
+<div class="spells-page">
+
+    <!-- Spell Slots Bar -->
+    <div class="spell-slots-bar">
+        <div class="slots-bar-inner">
+            {% for level, slot in char.spell_slots|dictsort %}
+            <div class="slot-bar-group" data-slot-level="{{ level }}">
+                <span class="slot-bar-label">{{ level|ordinal }}</span>
+                <div class="slot-bar-pips">
+                    {% for i in range(slot.max) %}
+                    <div class="slot-pip {% if i < slot.remaining %}available{% else %}used{% endif %}"
+                         onclick="useSlotPip({{ level }}, this)"></div>
+                    {% endfor %}
+                </div>
+                <span class="slot-bar-count" id="slot-count-{{ level }}">{{ slot.remaining }}/{{ slot.max }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        <div class="spellcasting-stats">
+            <span>DC <strong>{{ char.spell_save_dc }}</strong></span>
+            <span>Atk <strong>{{ char.spell_attack|modifier_str }}</strong></span>
+            <span>{{ char.spellcasting_ability|upper }}</span>
+        </div>
+    </div>
+
+    <!-- Add Spell Button -->
+    <div class="spells-toolbar">
+        <button class="btn btn-gold" onclick="showAddSpellModal()">
+            + Add Spell
+        </button>
+        <div class="spell-filter-bar">
+            <button class="btn btn-sm spell-filter active" data-level="all" onclick="filterSpells('all', this)">All</button>
+            <button class="btn btn-sm spell-filter" onclick="filterSpells('prepared', this)">Prepared</button>
+            <button class="btn btn-sm spell-filter" onclick="filterSpells('unprepared', this)">Unprepared</button>
+            <span class="filter-sep">│</span>
+            <button class="btn btn-sm spell-filter" data-level="0" onclick="filterSpells(0, this)">Cantrips</button>
+            {% for level in char.spell_slots|keys %}
+            <button class="btn btn-sm spell-filter" data-level="{{ level }}" onclick="filterSpells({{ level }}, this)">{{ level|ordinal }}</button>
+            {% endfor %}
+        </div>
+    </div>
+
+<!-- Add Spell Modal -->
+<div class="modal-overlay hidden" id="add-spell-modal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>Add New Spell</h2>
+            <button class="modal-close" onclick="hideAddSpellModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Spell Name</label>
+                    <input type="text" id="new-spell-name" class="input-field" placeholder="e.g. Vicious Mockery">
+                </div>
+                <div class="form-row">
+                    <label>Level</label>
+                    <select id="new-spell-level" class="input-field input-narrow">
+                        <option value="0">Cantrip</option>
+                        {% for i in range(1, 10) %}
+                        <option value="{{ i }}">{{ i|ordinal }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <label>School</label>
+                <select id="new-spell-school" class="input-field">
+                    <option value="">—</option>
+                    <option>Abjuration</option>
+                    <option>Conjuration</option>
+                    <option>Divination</option>
+                    <option>Enchantment</option>
+                    <option>Evocation</option>
+                    <option>Illusion</option>
+                    <option>Necromancy</option>
+                    <option>Transmutation</option>
+                </select>
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Casting Time</label>
+                    <input type="text" id="new-spell-casting" class="input-field" value="1 Action">
+                </div>
+                <div class="form-row">
+                    <label>Range</label>
+                    <input type="text" id="new-spell-range" class="input-field" value="Self">
+                </div>
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label>Components</label>
+                    <input type="text" id="new-spell-components" class="input-field" value="V, S">
+                </div>
+                <div class="form-row">
+                    <label>Duration</label>
+                    <input type="text" id="new-spell-duration" class="input-field" value="Instantaneous">
+                </div>
+            </div>
+            <div class="form-row-group">
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="new-spell-concentration"> Concentration
+                    </label>
+                </div>
+                <div class="form-row">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="new-spell-ritual"> Ritual
+                    </label>
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Image</label>
+                <div class="image-input-group">
+                    <input type="text" id="new-spell-image" class="input-field" placeholder="filename, URL, or upload →">
+                    <button type="button" class="btn btn-upload" onclick="uploadImage('spells', 'new-spell-image')">📷 Upload</button>
+                </div>
+            </div>
+            <div class="form-row">
+                <label>Description</label>
+                <textarea id="new-spell-desc" class="input-field textarea-field" rows="5" placeholder="Spell description..."></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn" onclick="hideAddSpellModal()">Cancel</button>
+            <button class="btn btn-gold" onclick="saveNewSpell()">Add Spell</button>
+        </div>
+    </div>
+</div>
+    <!-- Spell Cards Grid -->
+    <div class="spell-cards-grid" id="spell-cards-grid">
+        {% for spell in spells %}
+        {% if spell.unprepared and (loop.first or not spells[loop.index0 - 1].unprepared) %}
+        <div class="spell-section-divider" data-spell-section="unprepared">
+            <span>Unprepared Spells</span>
+        </div>
+        {% endif %}
+        <div class="spell-card-wrapper {% if spell.unprepared %}unprepared{% endif %}"
+             data-spell-level="{{ spell.level }}" data-spell-id="{{ spell.id }}"
+             data-spell-unprepared="{{ 'true' if spell.unprepared else 'false' }}">
+            <div class="spell-card" onclick="flipCard(this)">
+                <!-- FRONT: Image -->
+                <div class="spell-card-face spell-card-front">
+                    {% if spell.image %}
+                    <img src="{{ spell.image|image_url('spells') }}" alt="{{ spell.name }}" class="spell-card-img">
+                    {% else %}
+                    <div class="spell-card-placeholder">
+                        <span class="spell-card-placeholder-icon">
+                            {% if spell.level == 0 %}✧{% else %}★{% endif %}
+                        </span>
+                    </div>
+                    {% endif %}
+                    <div class="spell-card-name-bar">
+                        <span class="spell-card-name">{{ spell.name }}</span>
+                        <span class="spell-card-level-badge">
+                            {% if spell.level == 0 %}C{% else %}{{ spell.level }}{% endif %}
+                        </span>
+                    </div>
+                    {% if spell.concentration %}
+                    <div class="spell-conc-badge" title="Concentration">◎</div>
+                    {% endif %}
+                    {% if spell.ritual %}
+                    <div class="spell-ritual-badge" title="Ritual">R</div>
+                    {% endif %}
+                    {% if spell.unprepared %}
+                    <div class="spell-unprepared-badge" title="Not Prepared">✗</div>
+                    {% endif %}
+                </div>
+
+                <!-- BACK: Details (entire body scrollable) -->
+                <div class="spell-card-face spell-card-back">
+                    <div class="spell-back-header">
+                        <h3 class="spell-back-name">{{ spell.name }}</h3>
+                        <span class="spell-back-level">
+                            {% if spell.level == 0 %}Cantrip{% else %}{{ spell.level|ordinal }}-level{% endif %}
+                            {% if spell.school %} {{ spell.school }}{% endif %}
+                        </span>
+                    </div>
+                    <div class="spell-back-scrollable">
+                        <!-- Cast action (top of scrollable) -->
+                        <div class="spell-back-cast" onclick="event.stopPropagation()">
+                            {% if spell.unprepared and spell.level != 0 %}
+                            <div class="spell-unprepared-notice">Not prepared — prepare to cast</div>
+                            {% elif spell.level == 0 %}
+                            <button class="btn btn-cast btn-cantrip" onclick='castSpell({{ spell.id | tojson }}, 0, {{ spell.name | tojson }})'>
+                                Cast Cantrip
+                            </button>
+                            {% else %}
+                            <div class="cast-slot-selector">
+                                <label>Cast at level:</label>
+                                <select class="cast-level-select" id="cast-level-{{ spell.id }}">
+                                    {% for lvl in range(spell.level, 10) %}
+                                    {% if lvl in char.spell_slots %}
+                                    <option value="{{ lvl }}">{{ lvl|ordinal }} ({{ char.spell_slots[lvl].remaining }} left)</option>
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <button class="btn btn-cast" onclick='castSpellAtLevel({{ spell.id | tojson }}, {{ spell.name | tojson }})'>
+                                ⚡ Cast
+                            </button>
+                            {% endif %}
+                        </div>
+
+                        <!-- Meta + Description -->
+                        <div class="spell-back-meta">
+                            <div><strong>Casting:</strong> {{ spell.casting_time }}</div>
+                            <div><strong>Range:</strong> {{ spell.range }}</div>
+                            <div><strong>Components:</strong> {{ spell.components }}</div>
+                            <div><strong>Duration:</strong> {{ spell.duration }}</div>
+                        </div>
+                        <div class="spell-back-desc">
+                            {{ spell.description }}
+                        </div>
+
+                        <!-- Manage actions (bottom of scrollable) -->
+                        <div class="spell-back-actions" onclick="event.stopPropagation()">
+                            {% if spell.level != 0 %}
+                            {% if spell.unprepared %}
+                            <button class="btn btn-sm btn-gold" onclick="togglePrepared('{{ spell.id }}', true)">
+                                ✦ Prepare
+                            </button>
+                            {% else %}
+                            <button class="btn btn-sm" onclick="togglePrepared('{{ spell.id }}', false)">
+                                ✗ Unprepare
+                            </button>
+                            {% endif %}
+                            {% endif %}
+                            <button class="btn btn-sm btn-danger" onclick="deleteSpell('{{ spell.id }}', '{{ spell.name }}')">
+                                Remove
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+
+        {% if not spells|length %}
+        <div class="empty-spells">
+            <span class="empty-icon">📜</span>
+            <p>No spells yet. Add your first spell to begin!</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CHAR_ID = "{{ char.id }}";
+</script>
+{% endblock %}
